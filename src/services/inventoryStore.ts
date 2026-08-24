@@ -240,9 +240,16 @@ class InventoryStore {
 
       return true;
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Supabase 데이터 조회 실패';
-      console.error('Supabase fetch error:', errorMsg);
+      let errorMsg = 'Supabase 데이터 조회 실패';
+      if (err instanceof Error) {
+        errorMsg = err.message;
+      } else if (typeof err === 'object' && err !== null) {
+        const anyErr = err as { message?: string; error_description?: string; details?: string; hint?: string };
+        errorMsg = anyErr.message || anyErr.error_description || anyErr.details || anyErr.hint || JSON.stringify(err);
+      }
+      console.warn('Supabase fetch error:', errorMsg);
       this.syncError = errorMsg;
+      this.isConnectedToSupabase = false;
       return false;
     } finally {
       this.isLoading = false;

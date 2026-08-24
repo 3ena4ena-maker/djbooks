@@ -16,7 +16,10 @@ import {
   ArrowUp,
   AlertCircle,
   Layers,
-  BookOpen
+  BookOpen,
+  Trash2,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -34,6 +37,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   onShowToast,
 }) => {
   const [modalMode, setModalMode] = useState<'adjust' | 'restock' | 'sell' | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
 
   const book = inventoryStore.getBookById(bookId);
   const logs = inventoryStore.getLogs(bookId);
@@ -144,6 +148,15 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                 <span>재고 조정</span>
               </button>
             </div>
+
+            {/* [도서 삭제] */}
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="border border-[#ffdad6] text-[#ba1a1a] bg-[#fff8f7] hover:bg-[#ffdad6]/40 py-2.5 px-3 rounded-2xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs active:translate-y-[1px] cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 text-[#ba1a1a]" />
+              <span>도서 삭제</span>
+            </button>
           </div>
         </div>
 
@@ -327,6 +340,79 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           onClose={() => setModalMode(null)}
           onSuccess={(msg) => onShowToast(msg)}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in"
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div
+            className="bg-[#ffffff] rounded-2xl p-6 max-w-md w-full border border-[#c3c7c7] shadow-xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#ffdad6] flex items-center justify-center text-[#ba1a1a]">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-lg font-bold text-[#171e1e]">
+                    도서 삭제
+                  </h3>
+                  <p className="text-xs text-[#737878]">이 작업은 되돌릴 수 없습니다.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="text-[#737878] hover:text-[#171e1e] p-1 rounded-lg hover:bg-[#f5f3ee] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-[#f5f3ee] rounded-xl border border-[#e9e2d1] flex items-center gap-3.5">
+              <BookCover src={book.coverImage} alt={book.title} size="sm" />
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-[#171e1e] text-sm truncate">{book.title}</div>
+                <div className="text-xs text-[#737878] mt-0.5">{book.author} · {book.publisher}</div>
+                <div className="text-xs text-[#ba1a1a] font-semibold mt-1">
+                  현재 보유 재고: {book.quantity}권
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#434848] leading-relaxed">
+              도서를 삭제하면 서점 카탈로그 및 해당 도서의 모든 재고 내역이 데이터베이스에서 함께 삭제됩니다. 정말로 삭제하시겠습니까?
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-[#434848] hover:bg-[#f5f3ee] border border-[#c3c7c7] cursor-pointer transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const title = book.title;
+                  inventoryStore.deleteBook(book.id);
+                  feedback.playBeep('warning');
+                  onShowToast(`도서 '${title}'(이)가 삭제되었습니다.`);
+                  setShowDeleteConfirm(false);
+                  onBack();
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#ba1a1a] hover:bg-[#93000a] flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>삭제 확인</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -12,7 +12,10 @@ import {
   PlusCircle,
   MinusCircle,
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  Trash2,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -35,6 +38,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [sort, setSort] = useState<InventorySort>('updated');
   const [search, setSearch] = useState<string>(searchQuery);
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
+  const [bookToDelete, setBookToDelete] = useState<BookWithStock | null>(null);
 
   const settings = inventoryStore.getSettings();
   const allBooks = inventoryStore.getBooksWithStock();
@@ -117,6 +121,24 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       feedback.playBeep('success');
       onShowToast(`${book.title} -1권 판매 (현재: ${res.newQuantity}권)`);
     }
+  };
+
+  const handleOpenDeleteConfirm = (e: React.MouseEvent, book: BookWithStock) => {
+    e.stopPropagation();
+    setBookToDelete(book);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!bookToDelete) return;
+    const title = bookToDelete.title;
+    const ok = inventoryStore.deleteBook(bookToDelete.id);
+    if (ok) {
+      feedback.playBeep('warning');
+      onShowToast(`도서 '${title}'(이)가 삭제되었습니다.`);
+    } else {
+      onShowToast('도서 삭제에 실패했습니다.');
+    }
+    setBookToDelete(null);
   };
 
   return (
@@ -227,7 +249,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               <th className="py-3.5 px-5">현재 재고</th>
               <th className="py-3.5 px-5 text-right">판매가</th>
               <th className="py-3.5 px-5 text-right">최근 수정일</th>
-              <th className="py-3.5 px-5 text-center w-24">빠른 변동</th>
+              <th className="py-3.5 px-5 text-center w-28">빠른 변동 / 관리</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e4e2dd] text-sm">
@@ -283,22 +305,29 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     {formatDate(book.updatedAt)}
                   </td>
 
-                  {/* Quick delta buttons */}
+                  {/* Quick delta buttons & Delete Button */}
                   <td className="py-3.5 px-5 align-middle text-center" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-center gap-1">
+                    <div className="flex items-center justify-center gap-1.5">
                       <button
                         title="1권 판매"
                         onClick={(e) => handleQuickMinus(e, book)}
-                        className="p-1 rounded-md bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] transition-colors cursor-pointer"
+                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] transition-colors cursor-pointer"
                       >
                         <MinusCircle className="w-4 h-4" />
                       </button>
                       <button
                         title="1권 입고"
                         onClick={(e) => handleQuickAdd(e, book)}
-                        className="p-1 rounded-md bg-[#f0eee9] hover:bg-[#d6eaaf] text-[#3c4c20] transition-colors cursor-pointer"
+                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#d6eaaf] text-[#3c4c20] transition-colors cursor-pointer"
                       >
                         <PlusCircle className="w-4 h-4" />
+                      </button>
+                      <button
+                        title="도서 삭제"
+                        onClick={(e) => handleOpenDeleteConfirm(e, book)}
+                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] opacity-70 hover:opacity-100 transition-all cursor-pointer ml-0.5"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -343,7 +372,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </div>
               </div>
 
-              {/* Mobile Quick +/- Bar */}
+              {/* Mobile Quick +/- Bar & Delete Button */}
               <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9]" onClick={(e) => e.stopPropagation()}>
                 <span className="text-[11px] text-[#737878] font-mono">
                   ISBN {book.isbn}
@@ -351,15 +380,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={(e) => handleQuickMinus(e, book)}
-                    className="px-2.5 py-1 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center gap-1"
+                    className="px-2.5 py-1 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                   >
                     -1 판매
                   </button>
                   <button
                     onClick={(e) => handleQuickAdd(e, book)}
-                    className="px-2.5 py-1 bg-[#f5f3ee] text-[#3c4c20] hover:bg-[#d6eaaf] rounded-lg text-xs font-bold flex items-center gap-1"
+                    className="px-2.5 py-1 bg-[#f5f3ee] text-[#3c4c20] hover:bg-[#d6eaaf] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                   >
                     +1 입고
+                  </button>
+                  <button
+                    onClick={(e) => handleOpenDeleteConfirm(e, book)}
+                    title="도서 삭제"
+                    className="p-1.5 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -373,6 +409,72 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         <span>총 {sortedBooks.length}권의 도서 표시 중</span>
         <span>독립서점 재고관리 시스템</span>
       </div>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {bookToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in"
+          onClick={() => setBookToDelete(null)}
+        >
+          <div
+            className="bg-[#ffffff] rounded-2xl p-6 max-w-md w-full border border-[#c3c7c7] shadow-xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#ffdad6] flex items-center justify-center text-[#ba1a1a]">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-lg font-bold text-[#171e1e]">
+                    도서 목록에서 삭제
+                  </h3>
+                  <p className="text-xs text-[#737878]">이 작업은 되돌릴 수 없습니다.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBookToDelete(null)}
+                className="text-[#737878] hover:text-[#171e1e] p-1 rounded-lg hover:bg-[#f5f3ee] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-[#f5f3ee] rounded-xl border border-[#e9e2d1] flex items-center gap-3.5">
+              <BookCover src={bookToDelete.coverImage} alt={bookToDelete.title} size="sm" />
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-[#171e1e] text-sm truncate">{bookToDelete.title}</div>
+                <div className="text-xs text-[#737878] mt-0.5">{bookToDelete.author} · {bookToDelete.publisher}</div>
+                <div className="text-xs text-[#ba1a1a] font-semibold mt-1">
+                  현재 보유 재고: {bookToDelete.quantity}권
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#434848] leading-relaxed">
+              도서를 삭제하면 서점 카탈로그 및 해당 도서의 모든 재고 내역이 데이터베이스에서 함께 삭제됩니다. 정말로 삭제하시겠습니까?
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setBookToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-[#434848] hover:bg-[#f5f3ee] border border-[#c3c7c7] cursor-pointer transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#ba1a1a] hover:bg-[#93000a] flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>삭제 확인</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,0 +1,6 @@
+{
+  "name": "책방 재고 - 독립서점 재고관리",
+  "description": "한국 독립서점을 위한 모바일 및 데스크톱 바코드 스캔 및 실시간 도서 재고 관리 웹 애플리케이션",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -158,18 +158,19 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     ];
 
     const config = {
-      fps: 20, // Responsive 1D barcode scanning rate
+      fps: 25, // Higher scanning frequency for rapid 1D barcode edge detection
       qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-        const w = Math.floor(viewfinderWidth * 0.9);
-        const h = Math.floor(viewfinderHeight * 0.35);
+        // Broad generous bounding box to capture varying ISBN barcode lengths, tilts and margins
+        const w = Math.floor(viewfinderWidth * 0.95);
+        const h = Math.floor(viewfinderHeight * 0.6);
         return {
-          width: Math.max(260, Math.min(w, 440)),
-          height: Math.max(90, Math.min(h, 140)),
+          width: Math.max(300, Math.min(w, 640)),
+          height: Math.max(140, Math.min(h, 320)),
         };
       },
       disableFlip: false,
       experimentalFeatures: {
-        useBarCodeDetectorIfSupported: true,
+        useBarCodeDetectorIfSupported: true, // Native browser barcode detector API (BarcodeDetector)
       },
     };
 
@@ -608,7 +609,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           </div>
 
           {/* Target Frame */}
-          <div className="relative w-72 h-28 sm:w-80 sm:h-32 border-2 border-white/70 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+          <div className="relative w-80 h-36 sm:w-96 sm:h-44 border-2 border-white/70 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
             {/* Corner accents (Sage Green) */}
             <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-[#d6eaaf] rounded-tl-xl" />
             <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-[#d6eaaf] rounded-tr-xl" />

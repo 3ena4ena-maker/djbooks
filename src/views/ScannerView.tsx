@@ -51,6 +51,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   const qrReaderRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isStartingRef = useRef<boolean>(false);
+  const isStoppingRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
+  const sessionIdRef = useRef<number>(0);
   const scannerContainerId = 'barcode-reader-container';
 
   // Demo ISBN quick test chips
@@ -101,79 +105,99 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
   };
 
-  // Initialize camera scanner safely for mobile devices
-  const startScanner = async () => {
-    setIsStartingCamera(true);
-    setCameraError(null);
-
-    // 1. Safely stop and clear any existing instance first
-    if (qrReaderRef.current) {
-      try {
-        if (qrReaderRef.current.isScanning) {
-          await qrReaderRef.current.stop();
-        }
-        await qrReaderRef.current.clear();
-      } catch {
-        // Ignore stop error on stale instance
+  // Safe teardown helper that awaits both stop() and clear() without throwing
+  const safeStopAndClear = async (scanner: Html5Qrcode | null) => {
+    if (!scanner) return;
+    try {
+      if (scanner.isScanning) {
+        await scanner.stop();
       }
-      qrReaderRef.current = null;
+    } catch (e) {
+      console.debug('[ScannerView] Safe stop non-critical warning:', e);
+    }
+    try {
+      await scanner.clear();
+    } catch (e) {
+      console.debug('[ScannerView] Safe clear non-critical warning:', e);
+    }
+  };
+
+  // Initialize camera scanner safely for mobile devices with concurrency guards
+  const startScanner = async () => {
+    if (isStartingRef.current) {
+      console.debug('[ScannerView] startScanner ignored - already in transition');
+      return;
     }
 
+    isStartingRef.current = true;
+    const currentSessionId = ++sessionIdRef.current;
+
+    if (isMountedRef.current) {
+      setIsStartingCamera(true);
+      setCameraError(null);
+    }
+
+    // 1. Safely stop and clear any existing instance completely
+    const previousScanner = qrReaderRef.current;
+    qrReaderRef.current = null;
+    await safeStopAndClear(previousScanner);
+
+    if (currentSessionId !== sessionIdRef.current || !isMountedRef.current) {
+      isStartingRef.current = false;
+      return;
+    }
+
+    const formats = [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.QR_CODE,
+    ];
+
+    const config = {
+      fps: 20, // Responsive 1D barcode scanning rate
+      qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+        const w = Math.floor(viewfinderWidth * 0.9);
+        const h = Math.floor(viewfinderHeight * 0.35);
+        return {
+          width: Math.max(260, Math.min(w, 440)),
+          height: Math.max(90, Math.min(h, 140)),
+        };
+      },
+      disableFlip: false,
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true,
+      },
+    };
+
+    const onScanSuccess = (decodedText: string) => {
+      handleDetectedBarcode(decodedText);
+    };
+
+    const onScanFailure = () => {
+      // Normal frame scanning failure - ignore
+    };
+
     try {
-      const html5QrCode = new Html5Qrcode(scannerContainerId, {
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.QR_CODE,
-        ],
+      // 2. Primary attempt: standard facingMode
+      const primaryScanner = new Html5Qrcode(scannerContainerId, {
+        formatsToSupport: formats,
         verbose: false,
       });
-
-      qrReaderRef.current = html5QrCode;
-
-      // 1D EAN-13 / ISBN-13 Optimized scan configuration
-      const config = {
-        fps: 20, // Responsive 1D barcode scanning rate
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          // Horizontal wide rectangle specifically tailored for ISBN-13 (EAN-13) barcode strips
-          const w = Math.floor(viewfinderWidth * 0.9);
-          const h = Math.floor(viewfinderHeight * 0.35);
-          return {
-            width: Math.max(260, Math.min(w, 440)),
-            height: Math.max(90, Math.min(h, 140)),
-          };
-        },
-        disableFlip: false,
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true, // Native browser barcode detector API if supported
-        },
-      };
-
-      const onScanSuccess = (decodedText: string) => {
-        handleDetectedBarcode(decodedText);
-      };
-
-      const onScanFailure = () => {
-        // Normal frame scanning failure - ignore
-      };
-
-      // 2. Primary camera setup: standard facingMode with gentle ideal resolution (no strict min bounds)
-      const primaryCameraConfig = {
-        facingMode: facingMode,
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      };
 
       let started = false;
       let primaryError: unknown = null;
 
       try {
-        await html5QrCode.start(
-          primaryCameraConfig,
+        await primaryScanner.start(
+          {
+            facingMode: facingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
           config,
           onScanSuccess,
           onScanFailure
@@ -181,68 +205,102 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         started = true;
       } catch (err1) {
         primaryError = err1;
-        console.warn('[ScannerView] Primary facingMode start failed, trying deviceId fallback:', err1);
-      }
-
-      // 3. Single fallback: Enumerate camera devices and select rear camera deviceId
-      if (!started) {
-        try {
-          const cameras = await Html5Qrcode.getCameras();
-          if (cameras && cameras.length > 0) {
-            const backCam =
-              cameras.find((c) => {
-                const label = c.label.toLowerCase();
-                return label.includes('back') || label.includes('rear') || label.includes('environment');
-              }) || cameras[0];
-
-            await html5QrCode.start(
-              backCam.id,
-              config,
-              onScanSuccess,
-              onScanFailure
-            );
-            started = true;
-          } else {
-            throw primaryError || new Error('No camera devices available');
-          }
-        } catch (errFallback) {
-          console.warn('[ScannerView] Camera fallback also failed:', errFallback);
-          throw errFallback || primaryError;
-        }
+        console.warn('[ScannerView] Primary facingMode start failed, cleaning up before device fallback:', err1);
       }
 
       if (started) {
+        if (currentSessionId !== sessionIdRef.current || !isMountedRef.current) {
+          await safeStopAndClear(primaryScanner);
+          return;
+        }
+        qrReaderRef.current = primaryScanner;
         setCameraActive(true);
         setCameraError(null);
+        return;
+      }
+
+      // Cleanup failed primary instance before attempting fallback to avoid transition lock
+      await safeStopAndClear(primaryScanner);
+
+      if (currentSessionId !== sessionIdRef.current || !isMountedRef.current) {
+        return;
+      }
+
+      // 3. Fallback attempt: deviceId enumeration with a fresh Html5Qrcode instance
+      const cameras = await Html5Qrcode.getCameras();
+      if (cameras && cameras.length > 0) {
+        const backCam =
+          cameras.find((c) => {
+            const label = c.label.toLowerCase();
+            return label.includes('back') || label.includes('rear') || label.includes('environment');
+          }) || cameras[0];
+
+        const fallbackScanner = new Html5Qrcode(scannerContainerId, {
+          formatsToSupport: formats,
+          verbose: false,
+        });
+
+        try {
+          await fallbackScanner.start(
+            backCam.id,
+            config,
+            onScanSuccess,
+            onScanFailure
+          );
+
+          if (currentSessionId !== sessionIdRef.current || !isMountedRef.current) {
+            await safeStopAndClear(fallbackScanner);
+            return;
+          }
+
+          qrReaderRef.current = fallbackScanner;
+          setCameraActive(true);
+          setCameraError(null);
+        } catch (errFallback) {
+          await safeStopAndClear(fallbackScanner);
+          throw errFallback || primaryError;
+        }
+      } else {
+        throw primaryError || new Error('No camera devices available');
       }
     } catch (err: unknown) {
-      const friendlyMessage = parseCameraError(err);
-      setCameraActive(false);
-      setCameraError(friendlyMessage);
-      setShowManualInput(true);
+      if (currentSessionId === sessionIdRef.current && isMountedRef.current) {
+        const friendlyMessage = parseCameraError(err);
+        setCameraActive(false);
+        setCameraError(friendlyMessage);
+        setShowManualInput(true);
+      }
     } finally {
-      setIsStartingCamera(false);
+      isStartingRef.current = false;
+      if (currentSessionId === sessionIdRef.current && isMountedRef.current) {
+        setIsStartingCamera(false);
+      }
     }
   };
 
   const stopScanner = async () => {
-    if (qrReaderRef.current) {
-      try {
-        if (qrReaderRef.current.isScanning) {
-          await qrReaderRef.current.stop();
-        }
-        await qrReaderRef.current.clear();
-      } catch {
-        // Ignore
-      }
+    sessionIdRef.current++; // Invalidate any in-flight start
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+
+    try {
+      const scanner = qrReaderRef.current;
       qrReaderRef.current = null;
+      await safeStopAndClear(scanner);
+    } finally {
+      isStoppingRef.current = false;
+      if (isMountedRef.current) {
+        setCameraActive(false);
+      }
     }
-    setCameraActive(false);
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
     startScanner();
+
     return () => {
+      isMountedRef.current = false;
       stopScanner();
     };
   }, [facingMode]);

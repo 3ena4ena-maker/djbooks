@@ -2,7 +2,7 @@ import { Book, Inventory, InventoryLog } from '../types';
 
 export const INITIAL_BOOKS: Book[] = [
   {
-    id: 'book-1',
+    id: 'a0000001-0000-0000-0000-000000000001',
     isbn: '9780525559474',
     title: '미드나잇 라이브러리',
     author: '매트 헤이그',
@@ -18,7 +18,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-24T10:15:00.000Z'
   },
   {
-    id: 'book-2',
+    id: 'a0000001-0000-0000-0000-000000000002',
     isbn: '9788956608877',
     title: '오버스토리',
     author: '리처드 파워스',
@@ -34,7 +34,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-24T09:30:00.000Z'
   },
   {
-    id: 'book-3',
+    id: 'a0000001-0000-0000-0000-000000000003',
     isbn: '9788954655972',
     title: '여행의 이유',
     author: '김영하',
@@ -50,7 +50,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-24T08:00:00.000Z'
   },
   {
-    id: 'book-4',
+    id: 'a0000001-0000-0000-0000-000000000004',
     isbn: '9791186712399',
     title: '아무튼, 산책',
     author: '한수희',
@@ -66,7 +66,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-24T11:00:00.000Z'
   },
   {
-    id: 'book-5',
+    id: 'a0000001-0000-0000-0000-000000000005',
     isbn: '9791188810666',
     title: '구의 증명',
     author: '최진영',
@@ -82,7 +82,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-24T12:00:00.000Z'
   },
   {
-    id: 'book-6',
+    id: 'a0000001-0000-0000-0000-000000000006',
     isbn: '9788936434120',
     title: '소년이 온다',
     author: '한강',
@@ -98,7 +98,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-24T15:20:00.000Z'
   },
   {
-    id: 'book-7',
+    id: 'a0000001-0000-0000-0000-000000000007',
     isbn: '9791196482103',
     title: '작은 가게의 기록',
     author: '독립출판',
@@ -114,7 +114,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-24T07:45:00.000Z'
   },
   {
-    id: 'book-8',
+    id: 'a0000001-0000-0000-0000-000000000008',
     isbn: '9788954699075',
     title: '도시와 그 불확실한 벽',
     author: '무라카미 하루키',
@@ -130,7 +130,7 @@ export const INITIAL_BOOKS: Book[] = [
     updatedAt: '2026-08-23T16:30:00.000Z'
   },
   {
-    id: 'book-9',
+    id: 'a0000001-0000-0000-0000-000000000009',
     isbn: '9788954609203',
     title: '문학동네 세계문학전집 001: 위대한 개츠비',
     author: 'F. 스콧 피츠제럴드',
@@ -148,21 +148,21 @@ export const INITIAL_BOOKS: Book[] = [
 ];
 
 export const INITIAL_INVENTORY: Record<string, number> = {
-  'book-1': 42,
-  'book-2': 2,
-  'book-3': 0, // 품절
-  'book-4': 1, // 1권 남음
-  'book-5': 2, // 2권 남음
-  'book-6': 8,
-  'book-7': 0, // 품절
-  'book-8': 15,
-  'book-9': 14
+  'a0000001-0000-0000-0000-000000000001': 42,
+  'a0000001-0000-0000-0000-000000000002': 2,
+  'a0000001-0000-0000-0000-000000000003': 0, // 품절
+  'a0000001-0000-0000-0000-000000000004': 1, // 1권 남음
+  'a0000001-0000-0000-0000-000000000005': 2, // 2권 남음
+  'a0000001-0000-0000-0000-000000000006': 8,
+  'a0000001-0000-0000-0000-000000000007': 0, // 품절
+  'a0000001-0000-0000-0000-000000000008': 15,
+  'a0000001-0000-0000-0000-000000000009': 14
 };
 
 export const INITIAL_LOGS: InventoryLog[] = [
   {
-    id: 'log-1',
-    bookId: 'book-1',
+    id: 'b0000001-0000-0000-0000-000000000001',
+    bookId: 'a0000001-0000-0000-0000-000000000001',
     bookTitle: '미드나잇 라이브러리',
     bookAuthor: '매트 헤이그',
     bookCoverImage: INITIAL_BOOKS[0].coverImage,
@@ -173,8 +173,8 @@ export const INITIAL_LOGS: InventoryLog[] = [
     createdAt: '2026-08-24T10:15:00.000Z'
   },
   {
-    id: 'log-2',
-    bookId: 'book-6',
+    id: 'b0000001-0000-0000-0000-000000000002',
+    bookId: 'a0000001-0000-0000-0000-000000000006',
     bookTitle: '소년이 온다',
     bookAuthor: '한강',
     bookCoverImage: INITIAL_BOOKS[5].coverImage,
@@ -185,8 +185,8 @@ export const INITIAL_LOGS: InventoryLog[] = [
     createdAt: '2026-08-24T09:45:00.000Z'
   },
   {
-    id: 'log-3',
-    bookId: 'book-9',
+    id: 'b0000001-0000-0000-0000-000000000003',
+    bookId: 'a0000001-0000-0000-0000-000000000009',
     bookTitle: '문학동네 세계문학전집 001: 위대한 개츠비',
     bookAuthor: 'F. 스콧 피츠제럴드',
     bookCoverImage: INITIAL_BOOKS[8].coverImage,
@@ -197,8 +197,8 @@ export const INITIAL_LOGS: InventoryLog[] = [
     createdAt: '2026-08-24T08:30:00.000Z'
   },
   {
-    id: 'log-4',
-    bookId: 'book-1',
+    id: 'b0000001-0000-0000-0000-000000000004',
+    bookId: 'a0000001-0000-0000-0000-000000000001',
     bookTitle: '미드나잇 라이브러리',
     bookAuthor: '매트 헤이그',
     bookCoverImage: INITIAL_BOOKS[0].coverImage,
@@ -209,8 +209,8 @@ export const INITIAL_LOGS: InventoryLog[] = [
     createdAt: '2026-08-22T14:30:00.000Z'
   },
   {
-    id: 'log-5',
-    bookId: 'book-8',
+    id: 'b0000001-0000-0000-0000-000000000005',
+    bookId: 'a0000001-0000-0000-0000-000000000008',
     bookTitle: '도시와 그 불확실한 벽',
     bookAuthor: '무라카미 하루키',
     bookCoverImage: INITIAL_BOOKS[7].coverImage,
@@ -221,8 +221,8 @@ export const INITIAL_LOGS: InventoryLog[] = [
     createdAt: '2026-08-23T16:30:00.000Z'
   },
   {
-    id: 'log-6',
-    bookId: 'book-1',
+    id: 'b0000001-0000-0000-0000-000000000006',
+    bookId: 'a0000001-0000-0000-0000-000000000001',
     bookTitle: '미드나잇 라이브러리',
     bookAuthor: '매트 헤이그',
     bookCoverImage: INITIAL_BOOKS[0].coverImage,

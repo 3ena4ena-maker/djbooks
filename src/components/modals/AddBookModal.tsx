@@ -52,14 +52,13 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !author.trim()) {
-      alert('도서명과 저자를 입력해주세요.');
       return;
     }
 
-    const newBook = inventoryStore.registerBook(
+    const newBook = await inventoryStore.registerBook(
       {
         isbn: isbn.trim() || `N/A-${Date.now()}`,
         title: title.trim(),

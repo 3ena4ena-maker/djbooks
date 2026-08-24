@@ -100,26 +100,32 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
   };
 
-  const handleQuickAdd = (e: React.MouseEvent, book: BookWithStock) => {
+  const handleQuickAdd = async (e: React.MouseEvent, book: BookWithStock) => {
     e.stopPropagation();
-    const res = inventoryStore.adjustStock(book.id, 1, '입고', '재고 목록 빠른 입고 (+1권)');
+    const res = await inventoryStore.adjustStock(book.id, 1, '입고', '재고 목록 빠른 입고 (+1권)');
     if (res.success) {
       feedback.playBeep('success');
       onShowToast(`${book.title} +1권 입고 (현재: ${res.newQuantity}권)`);
+    } else if (res.error) {
+      feedback.playBeep('warning');
+      onShowToast(res.error);
     }
   };
 
-  const handleQuickMinus = (e: React.MouseEvent, book: BookWithStock) => {
+  const handleQuickMinus = async (e: React.MouseEvent, book: BookWithStock) => {
     e.stopPropagation();
     if (book.quantity <= 0) {
       onShowToast('현재 재고가 0권입니다.');
       feedback.playBeep('warning');
       return;
     }
-    const res = inventoryStore.adjustStock(book.id, -1, '판매', '재고 목록 빠른 판매 (-1권)');
+    const res = await inventoryStore.adjustStock(book.id, -1, '판매', '재고 목록 빠른 판매 (-1권)');
     if (res.success) {
       feedback.playBeep('success');
       onShowToast(`${book.title} -1권 판매 (현재: ${res.newQuantity}권)`);
+    } else if (res.error) {
+      feedback.playBeep('warning');
+      onShowToast(res.error);
     }
   };
 

@@ -9,13 +9,13 @@ import {
   DbInventoryTransaction,
 } from '../types';
 import { INITIAL_BOOKS, INITIAL_INVENTORY, INITIAL_LOGS } from '../data/mockData';
-import { supabase, isSupabaseConfigured, supabaseUrl } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const STORAGE_KEYS = {
-  BOOKS: 'folio_books_v2',
-  INVENTORY: 'folio_inventory_v2',
-  LOGS: 'folio_logs_v2',
-  SETTINGS: 'folio_settings_v2',
+  BOOKS: 'folio_books_v3',
+  INVENTORY: 'folio_inventory_v3',
+  LOGS: 'folio_logs_v3',
+  SETTINGS: 'folio_settings_v3',
 };
 
 export interface AppSettings {
@@ -35,6 +35,25 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 type Listener = () => void;
+
+// Helper to check if a string is a valid UUID format
+export function isValidUUID(str: string): boolean {
+  if (!str) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
+// Generate a valid RFC4122 v4 UUID
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 // Helper to map UI reason to Supabase transaction_type
 export function reasonToTransactionType(reason: StockReason, changeQty: number): TransactionType {
@@ -89,9 +108,22 @@ class InventoryStore {
       const storedLogs = localStorage.getItem(STORAGE_KEYS.LOGS);
       const storedSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
 
-      this.books = storedBooks ? JSON.parse(storedBooks) : [...INITIAL_BOOKS];
-      this.inventory = storedInventory ? JSON.parse(storedInventory) : { ...INITIAL_INVENTORY };
-      this.logs = storedLogs ? JSON.parse(storedLogs) : [...INITIAL_LOGS];
+      let parsedBooks: Book[] = storedBooks ? JSON.parse(storedBooks) : [...INITIAL_BOOKS];
+      let parsedInventory: Record<string, number> = storedInventory ? JSON.parse(storedInventory) : { ...INITIAL_INVENTORY };
+      let parsedLogs: InventoryLog[] = storedLogs ? JSON.parse(storedLogs) : [...INITIAL_LOGS];
+
+      // Safety check: if local cache has non-UUID books from previous sessions (e.g. 'book-1'),
+      // reset local cache to clean INITIAL_BOOKS with valid UUIDs
+      const hasInvalidUUID = parsedBooks.some((b) => !isValidUUID(b.id));
+      if (hasInvalidUUID) {
+        parsedBooks = [...INITIAL_BOOKS];
+        parsedInventory = { ...INITIAL_INVENTORY };
+        parsedLogs = [...INITIAL_LOGS];
+      }
+
+      this.books = parsedBooks;
+      this.inventory = parsedInventory;
+      this.logs = parsedLogs;
       this.settings = storedSettings ? JSON.parse(storedSettings) : { ...DEFAULT_SETTINGS };
     } catch (e) {
       console.warn('Failed to load local cache, fallback to initial state', e);
@@ -142,7 +174,7 @@ class InventoryStore {
     this.notify();
 
     try {
-      // 1. Fetch Books
+      // 1. Fetch Books from Supabase
       const { data: dbBooks, error: booksError } = await supabase
         .from('books')
         .select('*')
@@ -150,14 +182,14 @@ class InventoryStore {
 
       if (booksError) throw booksError;
 
-      // 2. Fetch Inventory
+      // 2. Fetch Inventory from Supabase
       const { data: dbInventory, error: invError } = await supabase
         .from('inventory')
         .select('*');
 
       if (invError) throw invError;
 
-      // 3. Fetch Transactions (Recent 100)
+      // 3. Fetch Transactions from Supabase (Recent 100)
       const { data: dbTransactions, error: txError } = await supabase
         .from('inventory_transactions')
         .select('*')
@@ -166,13 +198,13 @@ class InventoryStore {
 
       if (txError) throw txError;
 
-      // If database is completely empty on first connection, optionally seed initial sample books
+      // If database is completely empty on first connection, seed initial sample books with valid UUIDs
       if ((!dbBooks || dbBooks.length === 0) && (!dbInventory || dbInventory.length === 0)) {
         await this.seedInitialBooksToSupabase();
         return true;
       }
 
-      // Map Supabase books to Frontend model
+      // Map Supabase books to Frontend model - directly use Supabase UUID (b.id)
       const mappedBooks: Book[] = (dbBooks || []).map((b: DbBook) => ({
         id: b.id,
         isbn: b.isbn || '',
@@ -236,6 +268,7 @@ class InventoryStore {
       this.logs = mappedLogs;
       this.lastSyncTime = new Date();
       this.isConnectedToSupabase = true;
+      this.syncError = null;
       this.saveToStorage();
 
       return true;
@@ -468,7 +501,7 @@ class InventoryStore {
 
     // Start of current week (Monday)
     const now = new Date();
-    const currentDay = now.getDay(); // 0 is Sunday, 1 is Monday, ...
+    const currentDay = now.getDay();
     const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - diffToMonday);
@@ -487,7 +520,6 @@ class InventoryStore {
       }
     }
 
-    // Default fallback baseline if brand new state
     if (weeklySales === 0 && weeklyRestock === 0) {
       weeklySales = 12;
       weeklyRestock = 24;
@@ -509,21 +541,22 @@ class InventoryStore {
   }
 
   // ==========================================
-  // ✍️ Write & Mutation Methods (Supabase Sync)
+  // ✍️ Write & Mutation Methods (Supabase Sync with Rollback)
   // ==========================================
-  public adjustStock(
+  public async adjustStock(
     bookId: string,
     change: number,
     reason: StockReason,
     note?: string
-  ): { success: boolean; newQuantity: number; error?: string } {
+  ): Promise<{ success: boolean; newQuantity: number; error?: string }> {
     const book = this.books.find((b) => b.id === bookId);
     if (!book) {
       return { success: false, newQuantity: 0, error: '도서를 찾을 수 없습니다.' };
     }
 
-    const currentQty = this.inventory[bookId] ?? 0;
-    const newQty = Math.max(0, currentQty + change);
+    const previousQty = this.inventory[bookId] ?? 0;
+    const previousUpdatedAt = book.updatedAt;
+    const newQty = Math.max(0, previousQty + change);
     const nowIso = new Date().toISOString();
 
     // 1. Optimistic Local Update
@@ -531,8 +564,9 @@ class InventoryStore {
     book.updatedAt = nowIso;
 
     const txType = reasonToTransactionType(reason, change);
+    const generatedLogId = generateUUID();
     const newLog: InventoryLog = {
-      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: generatedLogId,
       bookId: book.id,
       bookTitle: book.title,
       bookAuthor: book.author,
@@ -548,35 +582,53 @@ class InventoryStore {
     this.logs.unshift(newLog);
     this.saveToStorage();
 
-    // 2. Persist to Supabase in Background
+    // 2. Persist to Supabase with error rollback
     if (isSupabaseConfigured) {
-      this.syncStockChangeToSupabase(bookId, newQty, change, txType, newLog.note);
+      const syncResult = await this.syncStockChangeToSupabase(bookId, newQty, change, txType, newLog.note);
+      if (!syncResult.success) {
+        // Rollback optimistic update
+        this.inventory[bookId] = previousQty;
+        book.updatedAt = previousUpdatedAt;
+        this.logs = this.logs.filter((l) => l.id !== generatedLogId);
+        this.saveToStorage();
+
+        // Refresh from server to ensure accurate state
+        this.fetchFromSupabase();
+
+        return {
+          success: false,
+          newQuantity: previousQty,
+          error: syncResult.error || '재고 저장에 실패했습니다. 서버 데이터와 다시 동기화합니다.',
+        };
+      }
     }
 
     return { success: true, newQuantity: newQty };
   }
 
-  public setExactStock(
+  public async setExactStock(
     bookId: string,
     newQuantity: number,
     reason: StockReason,
     note?: string
-  ): { success: boolean; newQuantity: number; error?: string } {
+  ): Promise<{ success: boolean; newQuantity: number; error?: string }> {
     const book = this.books.find((b) => b.id === bookId);
     if (!book) {
       return { success: false, newQuantity: 0, error: '도서를 찾을 수 없습니다.' };
     }
 
-    const currentQty = this.inventory[bookId] ?? 0;
-    const change = newQuantity - currentQty;
+    const previousQty = this.inventory[bookId] ?? 0;
+    const previousUpdatedAt = book.updatedAt;
+    const change = newQuantity - previousQty;
     const nowIso = new Date().toISOString();
 
     this.inventory[bookId] = newQuantity;
     book.updatedAt = nowIso;
 
     const txType = reasonToTransactionType(reason, change);
+    const generatedLogId = generateUUID();
     const newLog: InventoryLog = {
-      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: generatedLogId,
       bookId: book.id,
       bookTitle: book.title,
       bookAuthor: book.author,
@@ -585,7 +637,7 @@ class InventoryStore {
       resultingQuantity: newQuantity,
       reason,
       transactionType: txType,
-      note: note || `재고 직접 수정 (${currentQty}권 → ${newQuantity}권)`,
+      note: note || `재고 직접 수정 (${previousQty}권 → ${newQuantity}권)`,
       createdAt: nowIso,
     };
 
@@ -593,7 +645,22 @@ class InventoryStore {
     this.saveToStorage();
 
     if (isSupabaseConfigured) {
-      this.syncStockChangeToSupabase(bookId, newQuantity, change, txType, newLog.note);
+      const syncResult = await this.syncStockChangeToSupabase(bookId, newQuantity, change, txType, newLog.note);
+      if (!syncResult.success) {
+        // Rollback optimistic update
+        this.inventory[bookId] = previousQty;
+        book.updatedAt = previousUpdatedAt;
+        this.logs = this.logs.filter((l) => l.id !== generatedLogId);
+        this.saveToStorage();
+
+        this.fetchFromSupabase();
+
+        return {
+          success: false,
+          newQuantity: previousQty,
+          error: syncResult.error || '재고 저장에 실패했습니다. 서버 데이터와 다시 동기화합니다.',
+        };
+      }
     }
 
     return { success: true, newQuantity };
@@ -605,62 +672,128 @@ class InventoryStore {
     changeQuantity: number,
     transactionType: TransactionType,
     note?: string
-  ) {
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Update inventory table
-      const { data: existingInv } = await supabase
+      // 1. Ensure inventory record exists and update quantity
+      const { data: existingInv, error: selectErr } = await supabase
         .from('inventory')
         .select('id')
         .eq('book_id', bookId)
         .maybeSingle();
 
+      if (selectErr) throw selectErr;
+
       if (existingInv?.id) {
-        await supabase
+        const { error: updateErr } = await supabase
           .from('inventory')
           .update({
             quantity: newQuantity,
             updated_at: new Date().toISOString(),
           })
           .eq('book_id', bookId);
+
+        if (updateErr) throw updateErr;
       } else {
-        await supabase.from('inventory').insert({
+        const { error: insertErr } = await supabase.from('inventory').insert({
           book_id: bookId,
           quantity: newQuantity,
           location: this.locations[bookId] || 'A1 선반',
           updated_at: new Date().toISOString(),
         });
+
+        if (insertErr) throw insertErr;
       }
 
-      // Record transaction
+      // 2. Record transaction in inventory_transactions
       if (changeQuantity !== 0) {
-        await supabase.from('inventory_transactions').insert({
+        const { error: txErr } = await supabase.from('inventory_transactions').insert({
           book_id: bookId,
           change_quantity: changeQuantity,
           transaction_type: transactionType,
           note: note || null,
           created_at: new Date().toISOString(),
         });
+
+        if (txErr) throw txErr;
       }
-    } catch (e) {
-      console.error('Failed to persist inventory change to Supabase:', e);
+
+      return { success: true };
+    } catch (e: unknown) {
+      let errorMsg = 'Supabase 재고 반영 실패';
+      if (e instanceof Error) errorMsg = e.message;
+      else if (typeof e === 'object' && e !== null) {
+        const anyErr = e as { message?: string; error_description?: string; details?: string };
+        errorMsg = anyErr.message || anyErr.error_description || anyErr.details || JSON.stringify(e);
+      }
+      console.error('Failed to persist inventory change to Supabase:', errorMsg);
+      return { success: false, error: errorMsg };
     }
   }
 
-  public registerBook(
+  public async registerBook(
     bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>,
     initialQuantity: number = 1,
     note?: string
-  ): BookWithStock {
-    // Generate UUID or standard unique ID
-    const newId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `book-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  ): Promise<BookWithStock> {
+    const generatedBookId = generateUUID();
     const now = new Date().toISOString();
+
+    let finalBookId = generatedBookId;
+
+    if (isSupabaseConfigured) {
+      try {
+        // Insert into Supabase books table
+        const { data: insertedBook, error: bErr } = await supabase
+          .from('books')
+          .insert({
+            id: generatedBookId,
+            isbn: bookData.isbn,
+            title: bookData.title,
+            author: bookData.author,
+            publisher: bookData.publisher,
+            price: bookData.price,
+            category: bookData.category || '소설',
+            description: bookData.description || null,
+            cover_image_url: bookData.coverImage,
+            created_at: now,
+            updated_at: now,
+          })
+          .select('id, created_at, updated_at')
+          .single();
+
+        if (bErr) throw bErr;
+        if (insertedBook?.id) {
+          finalBookId = insertedBook.id;
+        }
+
+        // Insert inventory row with the canonical Supabase book_id UUID
+        const { error: iErr } = await supabase.from('inventory').insert({
+          book_id: finalBookId,
+          quantity: initialQuantity,
+          location: bookData.location || 'A1 선반',
+          updated_at: now,
+        });
+
+        if (iErr) throw iErr;
+
+        // Record initial transaction with the canonical Supabase book_id UUID
+        if (initialQuantity > 0) {
+          await supabase.from('inventory_transactions').insert({
+            book_id: finalBookId,
+            change_quantity: initialQuantity,
+            transaction_type: 'IN',
+            note: note || `신규 도서 초도 입고 (${initialQuantity}권)`,
+            created_at: now,
+          });
+        }
+      } catch (e) {
+        console.error('Error inserting new book to Supabase:', e);
+      }
+    }
 
     const newBook: Book = {
       ...bookData,
-      id: newId,
+      id: finalBookId,
       createdAt: now,
       updatedAt: now,
       coverImage:
@@ -669,14 +802,14 @@ class InventoryStore {
     };
 
     this.books.unshift(newBook);
-    this.inventory[newId] = initialQuantity;
+    this.inventory[finalBookId] = initialQuantity;
     if (bookData.location) {
-      this.locations[newId] = bookData.location;
+      this.locations[finalBookId] = bookData.location;
     }
 
     const newLog: InventoryLog = {
-      id: `log-${Date.now()}`,
-      bookId: newId,
+      id: generateUUID(),
+      bookId: finalBookId,
       bookTitle: newBook.title,
       bookAuthor: newBook.author,
       bookCoverImage: newBook.coverImage,
@@ -691,63 +824,13 @@ class InventoryStore {
     this.logs.unshift(newLog);
     this.saveToStorage();
 
-    // Persist to Supabase
-    if (isSupabaseConfigured) {
-      this.persistNewBookToSupabase(newBook, initialQuantity, note);
-    }
-
     return {
       ...newBook,
       quantity: initialQuantity,
     };
   }
 
-  private async persistNewBookToSupabase(
-    newBook: Book,
-    initialQuantity: number,
-    note?: string
-  ) {
-    try {
-      const { error: bErr } = await supabase.from('books').insert({
-        id: newBook.id,
-        isbn: newBook.isbn,
-        title: newBook.title,
-        author: newBook.author,
-        publisher: newBook.publisher,
-        price: newBook.price,
-        category: newBook.category || '소설',
-        description: newBook.description || null,
-        cover_image_url: newBook.coverImage,
-        created_at: newBook.createdAt,
-        updated_at: newBook.updatedAt,
-      });
-
-      if (bErr) throw bErr;
-
-      const { error: iErr } = await supabase.from('inventory').insert({
-        book_id: newBook.id,
-        quantity: initialQuantity,
-        location: newBook.location || 'A1 선반',
-        updated_at: newBook.updatedAt,
-      });
-
-      if (iErr) throw iErr;
-
-      if (initialQuantity > 0) {
-        await supabase.from('inventory_transactions').insert({
-          book_id: newBook.id,
-          change_quantity: initialQuantity,
-          transaction_type: 'IN',
-          note: note || `신규 도서 초도 입고 (${initialQuantity}권)`,
-          created_at: newBook.createdAt,
-        });
-      }
-    } catch (e) {
-      console.error('Error inserting new book to Supabase:', e);
-    }
-  }
-
-  public updateBook(bookId: string, updates: Partial<Book>): boolean {
+  public async updateBook(bookId: string, updates: Partial<Book>): Promise<boolean> {
     const index = this.books.findIndex((b) => b.id === bookId);
     if (index === -1) return false;
 
@@ -765,7 +848,7 @@ class InventoryStore {
     this.saveToStorage();
 
     if (isSupabaseConfigured) {
-      this.persistBookUpdateToSupabase(bookId, updates);
+      await this.persistBookUpdateToSupabase(bookId, updates);
     }
 
     return true;
@@ -800,7 +883,7 @@ class InventoryStore {
     }
   }
 
-  public deleteBook(bookId: string): boolean {
+  public async deleteBook(bookId: string): Promise<boolean> {
     this.books = this.books.filter((b) => b.id !== bookId);
     delete this.inventory[bookId];
     delete this.locations[bookId];
@@ -808,7 +891,7 @@ class InventoryStore {
     this.saveToStorage();
 
     if (isSupabaseConfigured) {
-      this.deleteFromSupabase(bookId);
+      await this.deleteFromSupabase(bookId);
     }
 
     return true;

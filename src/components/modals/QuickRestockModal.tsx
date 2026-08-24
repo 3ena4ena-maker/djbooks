@@ -24,8 +24,8 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
       b.isbn.includes(search)
   );
 
-  const handleQuickAdd = (bookId: string, bookTitle: string, amount: number) => {
-    const res = inventoryStore.adjustStock(
+  const handleQuickAdd = async (bookId: string, bookTitle: string, amount: number) => {
+    const res = await inventoryStore.adjustStock(
       bookId,
       amount,
       '입고',
@@ -34,6 +34,9 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
     if (res.success) {
       feedback.playBeep('success');
       onSuccess(`${bookTitle} +${amount}권 입고되었습니다. (현재 재고: ${res.newQuantity}권)`);
+    } else if (res.error) {
+      feedback.playBeep('warning');
+      onSuccess(res.error);
     }
   };
 

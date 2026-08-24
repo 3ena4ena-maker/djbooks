@@ -287,13 +287,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   };
 
   // Quick Sell (-1)
-  const handleQuickSell = (book: BookWithStock) => {
+  const handleQuickSell = async (book: BookWithStock) => {
     if (book.quantity <= 0) {
       onShowToast('현재 재고가 0권입니다.');
       feedback.playBeep('warning');
       return;
     }
-    const res = inventoryStore.adjustStock(
+    const res = await inventoryStore.adjustStock(
       book.id,
       -1,
       '판매',
@@ -304,12 +304,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       const updated = inventoryStore.getBookById(book.id);
       if (updated) setMatchedBook(updated);
       onShowToast(`[판매 완료] ${book.title} (남은 재고: ${res.newQuantity}권)`);
+    } else if (res.error) {
+      feedback.playBeep('warning');
+      onShowToast(res.error);
     }
   };
 
   // Quick Restock (+1)
-  const handleQuickRestock = (book: BookWithStock) => {
-    const res = inventoryStore.adjustStock(
+  const handleQuickRestock = async (book: BookWithStock) => {
+    const res = await inventoryStore.adjustStock(
       book.id,
       1,
       '입고',
@@ -320,14 +323,17 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       const updated = inventoryStore.getBookById(book.id);
       if (updated) setMatchedBook(updated);
       onShowToast(`[입고 완료] ${book.title} (현재 재고: ${res.newQuantity}권)`);
+    } else if (res.error) {
+      feedback.playBeep('warning');
+      onShowToast(res.error);
     }
   };
 
   // Register New Book
-  const handleRegisterNewBook = () => {
+  const handleRegisterNewBook = async () => {
     if (!newBookCandidate || !scannedIsbn) return;
 
-    const registered = inventoryStore.registerBook(
+    const registered = await inventoryStore.registerBook(
       {
         isbn: scannedIsbn,
         title: newBookCandidate.title || `새 도서 (${scannedIsbn})`,

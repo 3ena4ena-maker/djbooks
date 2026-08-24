@@ -36,11 +36,11 @@ export const StockAdjustModal: React.FC<StockAdjustModalProps> = ({
     { id: '기타', label: '기타 (직접 수정)', icon: 'edit' },
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (mode === 'restock') {
-      const res = inventoryStore.adjustStock(
+      const res = await inventoryStore.adjustStock(
         book.id,
         Math.abs(deltaAmount),
         '입고',
@@ -52,7 +52,7 @@ export const StockAdjustModal: React.FC<StockAdjustModalProps> = ({
         onClose();
       }
     } else if (mode === 'sell') {
-      const res = inventoryStore.adjustStock(
+      const res = await inventoryStore.adjustStock(
         book.id,
         -Math.abs(deltaAmount),
         '판매',
@@ -65,7 +65,7 @@ export const StockAdjustModal: React.FC<StockAdjustModalProps> = ({
       }
     } else {
       // Direct adjustment
-      const res = inventoryStore.setExactStock(
+      const res = await inventoryStore.setExactStock(
         book.id,
         targetQuantity,
         reason,

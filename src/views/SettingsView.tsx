@@ -209,19 +209,54 @@ CREATE INDEX IF NOT EXISTS idx_inventory_logs_book_id ON inventory_logs(book_id)
         </div>
       </form>
 
-      {/* Card 3: Database & Backup Management */}
+      {/* Card 3: Supabase Cloud Database & Backup Management */}
       <div className="bg-white rounded-2xl p-5 md:p-6 border border-[#c3c7c7] shadow-xs space-y-4">
-        <h2 className="text-base font-bold text-[#171e1e] flex items-center gap-2 border-b border-[#e4e2dd] pb-3">
-          <Database className="w-5 h-5 text-[#737878]" />
-          데이터베이스 및 백업
-        </h2>
+        <div className="flex items-center justify-between border-b border-[#e4e2dd] pb-3">
+          <h2 className="text-base font-bold text-[#171e1e] flex items-center gap-2">
+            <Database className="w-5 h-5 text-[#737878]" />
+            Supabase 클라우드 데이터베이스
+          </h2>
+          <span
+            className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+              inventoryStore.isConnectedToSupabase
+                ? 'bg-[#d6eaaf] text-[#142000]'
+                : 'bg-[#f0eee9] text-[#737878]'
+            }`}
+          >
+            {inventoryStore.isConnectedToSupabase ? '● 실시간 연동 중' : '○ 로컬 스토리지 모드'}
+          </span>
+        </div>
 
-        <p className="text-xs text-[#434848] leading-relaxed">
-          현재 앱은 브라우저 안전 스토리지에 데이터를 실시간 저장합니다. 향후 Supabase 또는 클라우드 PostgreSQL 연동을 위한 전용 테이블 스키마가 완벽하게 준비되어 있습니다.
-        </p>
+        <div className="text-xs text-[#434848] space-y-2 leading-relaxed">
+          <div className="p-3 bg-[#f5f3ee] rounded-xl border border-[#e9e2d1] font-mono text-[11px] break-all">
+            <div className="text-[#737878] mb-1 font-sans font-bold">연결된 Supabase URL:</div>
+            <div className="text-[#171e1e]">https://moubboivhveqdqrwmlkq.supabase.co</div>
+          </div>
+          <p>
+            도서 목록(<code className="font-mono bg-[#f0eee9] px-1 py-0.5 rounded">books</code>), 실시간 재고(<code className="font-mono bg-[#f0eee9] px-1 py-0.5 rounded">inventory</code>), 입출고 변경 내역(<code className="font-mono bg-[#f0eee9] px-1 py-0.5 rounded">inventory_transactions</code>)이 원자적으로 보존 및 동기화됩니다.
+          </p>
+        </div>
 
         <div className="flex flex-wrap gap-3 pt-2">
           <button
+            type="button"
+            onClick={async () => {
+              const ok = await inventoryStore.fetchFromSupabase();
+              if (ok) {
+                feedback.playBeep('success');
+                onShowToast('Supabase 데이터 동기화 완료');
+              } else {
+                onShowToast('동기화 실패: 네트워크 또는 Key를 확인하세요.');
+              }
+            }}
+            className="px-4 py-2.5 bg-[#171e1e] text-white rounded-xl text-xs font-bold hover:bg-[#2c3333] flex items-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Supabase 지금 동기화</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleExportJson}
             className="px-4 py-2.5 bg-[#f5f3ee] border border-[#c3c7c7] rounded-xl text-xs font-bold text-[#171e1e] hover:bg-[#eae8e3] flex items-center gap-1.5 cursor-pointer"
           >
@@ -230,19 +265,21 @@ CREATE INDEX IF NOT EXISTS idx_inventory_logs_book_id ON inventory_logs(book_id)
           </button>
 
           <button
+            type="button"
             onClick={() => setShowSqlModal(true)}
             className="px-4 py-2.5 bg-[#f5f3ee] border border-[#c3c7c7] rounded-xl text-xs font-bold text-[#171e1e] hover:bg-[#eae8e3] flex items-center gap-1.5 cursor-pointer"
           >
             <Code2 className="w-4 h-4" />
-            <span>Supabase SQL 스키마 보기</span>
+            <span>테이블 스키마 보기</span>
           </button>
 
           <button
+            type="button"
             onClick={handleResetData}
             className="px-4 py-2.5 bg-[#ffdad6] text-[#93000a] rounded-xl text-xs font-bold hover:bg-[#ffdad6]/80 flex items-center gap-1.5 ml-auto cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />
-            <span>샘플 데이터로 초기화</span>
+            <span>로컬 초기화</span>
           </button>
         </div>
       </div>

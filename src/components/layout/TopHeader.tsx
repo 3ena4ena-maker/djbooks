@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Search, Bell, ScanLine } from 'lucide-react';
+import { Search, ScanLine, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { ViewType } from '../../types';
+import { inventoryStore } from '../../services/inventoryStore';
 
 interface TopHeaderProps {
   onNavigate: (view: ViewType) => void;
@@ -14,6 +15,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   searchQuery = '',
 }) => {
   const [localQuery, setLocalQuery] = useState(searchQuery);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalQuery(e.target.value);
@@ -26,6 +28,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     e.preventDefault();
     if (localQuery.trim()) {
       onNavigate('inventory');
+    }
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await inventoryStore.fetchFromSupabase();
+    } finally {
+      setTimeout(() => setIsSyncing(false), 500);
     }
   };
 
@@ -56,9 +67,40 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Action shortcuts on top right */}
       <div className="flex items-center gap-2 md:gap-3">
+        {/* Supabase Status Pill */}
+        <button
+          onClick={handleManualSync}
+          disabled={isSyncing}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+            inventoryStore.isConnectedToSupabase
+              ? 'bg-[#edf5e1] text-[#2d4710] border-[#c3d9a5] hover:bg-[#e2edd2]'
+              : 'bg-[#f5f3ee] text-[#737878] border-[#c3c7c7]'
+          }`}
+          title={
+            inventoryStore.isConnectedToSupabase
+              ? 'Supabase PostgreSQL 실시간 연결됨 (클릭하여 동기화)'
+              : '로컬 모드 (Supabase Key 설정 시 자동 동기화)'
+          }
+        >
+          {isSyncing || inventoryStore.isLoading ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3c4c20]" />
+          ) : inventoryStore.isConnectedToSupabase ? (
+            <Cloud className="w-3.5 h-3.5 text-[#3c4c20]" />
+          ) : (
+            <CloudOff className="w-3.5 h-3.5 text-[#737878]" />
+          )}
+          <span className="hidden sm:inline">
+            {isSyncing || inventoryStore.isLoading
+              ? '동기화 중...'
+              : inventoryStore.isConnectedToSupabase
+              ? 'DB 연결됨'
+              : '로컬 모드'}
+          </span>
+        </button>
+
         <button
           onClick={() => onNavigate('scanner')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#171e1e] text-white text-xs font-semibold hover:bg-[#2c3333] transition-colors shadow-xs"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#171e1e] text-white text-xs font-semibold hover:bg-[#2c3333] transition-colors shadow-xs cursor-pointer"
           title="바코드 스캔"
         >
           <ScanLine className="w-3.5 h-3.5" />
@@ -67,7 +109,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         <button
           onClick={() => onNavigate('settings')}
-          className="p-2 text-[#434848] hover:bg-[#f5f3ee] rounded-full transition-colors relative"
+          className="p-2 text-[#434848] hover:bg-[#f5f3ee] rounded-full transition-colors relative cursor-pointer"
           title="설정"
         >
           <span className="material-symbols-outlined text-[22px]">settings</span>
@@ -76,3 +118,4 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     </header>
   );
 };
+

@@ -96,17 +96,22 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
       qrReaderRef.current = html5QrCode;
 
+      // 1D EAN-13 / ISBN-13 Optimized scan configuration
       const config = {
-        fps: 15,
+        fps: 20, // Higher scan rate for responsive 1D line detection
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const w = Math.floor(viewfinderWidth * 0.85);
-          const h = Math.floor(viewfinderHeight * 0.6);
+          // Horizontal wide rectangle specifically tailored for ISBN-13 (EAN-13) barcode strips
+          const w = Math.floor(viewfinderWidth * 0.9);
+          const h = Math.floor(viewfinderHeight * 0.35);
           return {
-            width: Math.max(220, Math.min(w, 360)),
-            height: Math.max(140, Math.min(h, 240)),
+            width: Math.max(260, Math.min(w, 440)),
+            height: Math.max(90, Math.min(h, 140)),
           };
         },
-        aspectRatio: 1.333333,
+        disableFlip: false,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true, // Uses native browser hardware barcode detector API when supported
+        },
       };
 
       const onScanSuccess = (decodedText: string) => {
@@ -117,18 +122,40 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         // Frame scan noise - ignore
       };
 
-      // Strategy 1: Try requested facingMode
+      // High-resolution camera constraints (ideal 1080p, flexible for various mobile devices)
+      const idealCameraConstraints: MediaTrackConstraints = {
+        facingMode: facingMode,
+        width: { min: 640, ideal: 1920 },
+        height: { min: 480, ideal: 1080 },
+      };
+
+      // Strategy 1: Try requested facingMode with high resolution constraints
       let started = false;
       try {
         await html5QrCode.start(
-          { facingMode: facingMode },
+          idealCameraConstraints,
           config,
           onScanSuccess,
           onScanFailure
         );
         started = true;
       } catch (err1) {
-        console.warn('Strategy 1 (requested facingMode) failed:', err1);
+        console.warn('Strategy 1 (high-res constraints) failed, trying standard facingMode:', err1);
+      }
+
+      // Strategy 1b: Try standard facingMode without resolution constraints
+      if (!started) {
+        try {
+          await html5QrCode.start(
+            { facingMode: facingMode },
+            config,
+            onScanSuccess,
+            onScanFailure
+          );
+          started = true;
+        } catch (err1b) {
+          console.warn('Strategy 1b (standard facingMode) failed:', err1b);
+        }
       }
 
       // Strategy 2: If environment failed, try user facing camera
@@ -151,8 +178,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         try {
           const cameras = await Html5Qrcode.getCameras();
           if (cameras && cameras.length > 0) {
+            // Prefer back camera if found in device label
+            const backCam = cameras.find((c) =>
+              c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('rear') || c.label.toLowerCase().includes('environment')
+            ) || cameras[0];
+
             await html5QrCode.start(
-              cameras[0].id,
+              backCam.id,
               config,
               onScanSuccess,
               onScanFailure
@@ -500,7 +532,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           </div>
 
           {/* Target Frame */}
-          <div className="relative w-64 h-36 sm:w-72 sm:h-40 border-2 border-white/60 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+          <div className="relative w-72 h-28 sm:w-80 sm:h-32 border-2 border-white/70 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
             {/* Corner accents (Sage Green) */}
             <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-[#d6eaaf] rounded-tl-xl" />
             <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-[#d6eaaf] rounded-tr-xl" />

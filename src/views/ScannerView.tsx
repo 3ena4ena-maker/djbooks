@@ -229,11 +229,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       // 3. Fallback attempt: deviceId enumeration with a fresh Html5Qrcode instance
       const cameras = await Html5Qrcode.getCameras();
       if (cameras && cameras.length > 0) {
+        // Prioritize rear/back camera using all relevant keywords (back, rear, environment, 후면, 뒤)
+        const rearKeywords = ['back', 'rear', 'environment', '후면', '뒤'];
         const backCam =
           cameras.find((c) => {
             const label = c.label.toLowerCase();
-            return label.includes('back') || label.includes('rear') || label.includes('environment');
-          }) || cameras[0];
+            return rearKeywords.some((keyword) => label.includes(keyword));
+          }) ||
+          (facingMode === 'environment' && cameras.length > 1
+            ? cameras[cameras.length - 1] // On mobile, secondary/last camera is usually the rear camera
+            : cameras[0]);
 
         const fallbackScanner = new Html5Qrcode(scannerContainerId, {
           formatsToSupport: formats,

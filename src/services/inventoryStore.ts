@@ -977,61 +977,101 @@ class InventoryStore {
 
     // 3. Primary Universal API: Google Books API (CORS enabled, No Key Required, Great Korean book coverage)
     try {
+      // 3-a. Try precise ISBN query
+      const primaryUrl = `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(clean)}`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-      const gBooksRes = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(clean)}`,
-        { signal: controller.signal }
-      );
+      const gBooksRes = await fetch(primaryUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
 
+      const gBooksStatus = gBooksRes.status;
+      let gBooksData: any = null;
       if (gBooksRes.ok) {
-        const gBooksData = await gBooksRes.json();
-        if (gBooksData.items && gBooksData.items.length > 0) {
-          const volumeInfo = gBooksData.items[0].volumeInfo || {};
-          const authors = Array.isArray(volumeInfo.authors)
-            ? volumeInfo.authors.join(', ')
-            : volumeInfo.authors || '';
-          
-          let coverImg =
-            volumeInfo.imageLinks?.thumbnail ||
-            volumeInfo.imageLinks?.smallThumbnail ||
-            '';
-          
-          // Secure image URL (prevent mixed content http warnings)
-          if (coverImg.startsWith('http://')) {
-            coverImg = coverImg.replace('http://', 'https://');
+        gBooksData = await gBooksRes.json();
+      }
+
+      console.log(
+        '[GoogleBooks] URL:',
+        primaryUrl,
+        '| HTTP Status:',
+        gBooksStatus,
+        '| Items count:',
+        gBooksData?.items ? gBooksData.items.length : 0
+      );
+
+      let foundItem = gBooksData?.items?.[0];
+
+      // 3-b. Fallback: If 0 items with "isbn:", try direct term search with ISBN
+      if (!foundItem && clean.length >= 10) {
+        try {
+          const fallbackUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(clean)}`;
+          const fbController = new AbortController();
+          const fbTimeout = setTimeout(() => fbController.abort(), 4000);
+          const fbRes = await fetch(fallbackUrl, { signal: fbController.signal });
+          clearTimeout(fbTimeout);
+          if (fbRes.ok) {
+            const fbData = await fbRes.json();
+            console.log(
+              '[GoogleBooks-Fallback] URL:',
+              fallbackUrl,
+              '| HTTP Status:',
+              fbRes.status,
+              '| Items count:',
+              fbData?.items ? fbData.items.length : 0
+            );
+            if (fbData?.items && fbData.items.length > 0) {
+              foundItem = fbData.items[0];
+            }
           }
-          if (!coverImg) {
-            coverImg =
-              'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
-          }
-
-          const category =
-            Array.isArray(volumeInfo.categories) && volumeInfo.categories.length > 0
-              ? volumeInfo.categories[0]
-              : '일반도서';
-
-          const publishedDate = volumeInfo.publishedDate
-            ? volumeInfo.publishedDate.replace(/-/g, '.')
-            : new Date().toISOString().split('T')[0].replace(/-/g, '.');
-
-          return {
-            isbn: clean,
-            title: volumeInfo.title || '',
-            author: authors || '저자 미상',
-            publisher: volumeInfo.publisher || '출판사 미상',
-            price: 15000,
-            category: category,
-            publishedDate: publishedDate,
-            bindingType: '무선제본',
-            location: '신간 매대',
-            coverImage: coverImg,
-            description: volumeInfo.description || '',
-            isExternalFound: true,
-          };
+        } catch (errFb) {
+          console.warn('[inventoryStore] Google Books fallback search error:', errFb);
         }
+      }
+
+      if (foundItem) {
+        const volumeInfo = foundItem.volumeInfo || {};
+        const authors = Array.isArray(volumeInfo.authors)
+          ? volumeInfo.authors.join(', ')
+          : volumeInfo.authors || '';
+
+        let coverImg =
+          volumeInfo.imageLinks?.thumbnail ||
+          volumeInfo.imageLinks?.smallThumbnail ||
+          '';
+
+        // Secure image URL (prevent mixed content http warnings)
+        if (coverImg.startsWith('http://')) {
+          coverImg = coverImg.replace('http://', 'https://');
+        }
+        if (!coverImg) {
+          coverImg =
+            'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
+        }
+
+        const category =
+          Array.isArray(volumeInfo.categories) && volumeInfo.categories.length > 0
+            ? volumeInfo.categories[0]
+            : '일반도서';
+
+        const publishedDate = volumeInfo.publishedDate
+          ? volumeInfo.publishedDate.replace(/-/g, '.')
+          : new Date().toISOString().split('T')[0].replace(/-/g, '.');
+
+        return {
+          isbn: clean,
+          title: volumeInfo.title || '',
+          author: authors || '저자 미상',
+          publisher: volumeInfo.publisher || '출판사 미상',
+          price: 15000,
+          category: category,
+          publishedDate: publishedDate,
+          bindingType: '무선제본',
+          location: '신간 매대',
+          coverImage: coverImg,
+          description: volumeInfo.description || '',
+          isExternalFound: true,
+        };
       }
     } catch (errGBooks) {
       console.warn('[inventoryStore] Google Books API search failed or timed out:', errGBooks);
@@ -1039,46 +1079,57 @@ class InventoryStore {
 
     // 4. Secondary Backup API: Open Library API (CORS enabled, No Key Required)
     try {
+      const olUrl = `https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(clean)}&format=json&jscmd=data`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      const olRes = await fetch(
-        `https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(clean)}&format=json&jscmd=data`,
-        { signal: controller.signal }
-      );
+      const olRes = await fetch(olUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
 
+      const olStatus = olRes.status;
+      let olData: any = null;
       if (olRes.ok) {
-        const olData = await olRes.json();
-        const bookKey = `ISBN:${clean}`;
-        if (olData[bookKey]) {
-          const item = olData[bookKey];
-          const authors = Array.isArray(item.authors)
-            ? item.authors.map((a: { name?: string }) => a.name).filter(Boolean).join(', ')
-            : '';
-          const publishers = Array.isArray(item.publishers)
-            ? item.publishers.map((p: { name?: string }) => p.name).filter(Boolean).join(', ')
-            : '';
-          const coverImg =
-            item.cover?.large ||
-            item.cover?.medium ||
-            item.cover?.small ||
-            'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
+        olData = await olRes.json();
+      }
 
-          return {
-            isbn: clean,
-            title: item.title || '',
-            author: authors || '저자 미상',
-            publisher: publishers || '출판사 미상',
-            price: 15000,
-            category: '일반도서',
-            publishedDate: item.publish_date || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
-            bindingType: '무선제본',
-            location: '신간 매대',
-            coverImage: coverImg,
-            isExternalFound: true,
-          };
-        }
+      const bookKey = `ISBN:${clean}`;
+      const hasOlItem = Boolean(olData && olData[bookKey]);
+      console.log(
+        '[OpenLibrary] URL:',
+        olUrl,
+        '| HTTP Status:',
+        olStatus,
+        '| Found:',
+        hasOlItem
+      );
+
+      if (hasOlItem) {
+        const item = olData[bookKey];
+        const authors = Array.isArray(item.authors)
+          ? item.authors.map((a: { name?: string }) => a.name).filter(Boolean).join(', ')
+          : '';
+        const publishers = Array.isArray(item.publishers)
+          ? item.publishers.map((p: { name?: string }) => p.name).filter(Boolean).join(', ')
+          : '';
+        const coverImg =
+          item.cover?.large ||
+          item.cover?.medium ||
+          item.cover?.small ||
+          'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
+
+        return {
+          isbn: clean,
+          title: item.title || '',
+          author: authors || '저자 미상',
+          publisher: publishers || '출판사 미상',
+          price: 15000,
+          category: '일반도서',
+          publishedDate: item.publish_date || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+          bindingType: '무선제본',
+          location: '신간 매대',
+          coverImage: coverImg,
+          isExternalFound: true,
+        };
       }
     } catch (errOl) {
       console.warn('[inventoryStore] Open Library API search failed:', errOl);

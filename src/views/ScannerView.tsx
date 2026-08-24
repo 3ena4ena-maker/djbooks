@@ -6,8 +6,6 @@ import { BookCover } from '../components/common/BookCover';
 import {
   Camera,
   RefreshCw,
-  Zap,
-  ZapOff,
   PlusCircle,
   MinusCircle,
   ScanLine,
@@ -16,9 +14,13 @@ import {
   BookPlus,
   ArrowLeft,
   Keyboard,
-  Info
+  Upload,
+  Image as ImageIcon,
+  AlertCircle,
+  HelpCircle,
+  CheckCircle2
 } from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 interface ScannerViewProps {
   onSelectBook: (bookId: string) => void;
@@ -33,10 +35,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 }) => {
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isStartingCamera, setIsStartingCamera] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
-  const [flashOn, setFlashOn] = useState<boolean>(false);
   const [manualIsbn, setManualIsbn] = useState<string>('');
   const [showManualInput, setShowManualInput] = useState<boolean>(false);
+  const [isScanningFile, setIsScanningFile] = useState<boolean>(false);
 
   // Scanned results state
   const [scannedIsbn, setScannedIsbn] = useState<string | null>(null);
@@ -47,6 +50,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [isLoadingMetadata, setIsLoadingMetadata] = useState<boolean>(false);
 
   const qrReaderRef = useRef<Html5Qrcode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scannerContainerId = 'barcode-reader-container';
 
   // Demo ISBN quick test chips
@@ -55,52 +59,134 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     { isbn: '9780525559474', title: '미드나잇 라이브러리 (기존)' },
     { isbn: '9788954655972', title: '여행의 이유 (기존)' },
     { isbn: '9788937460005', title: '데미안 (신간 등록)' },
+    { isbn: '9791190313186', title: '우리가 빛의 속도로 갈 수 없다면' },
   ];
 
-  // Initialize camera scanner
+  // Initialize camera scanner with multi-strategy fallback
   const startScanner = async () => {
-    try {
-      setCameraError(null);
-      if (qrReaderRef.current) {
-        try {
-          await qrReaderRef.current.stop();
-        } catch {
-          // Ignore
-        }
-      }
+    setIsStartingCamera(true);
+    setCameraError(null);
 
-      const html5QrCode = new Html5Qrcode(scannerContainerId);
+    // Stop existing instance safely
+    if (qrReaderRef.current) {
+      try {
+        if (qrReaderRef.current.isScanning) {
+          await qrReaderRef.current.stop();
+        }
+        await qrReaderRef.current.clear();
+      } catch {
+        // Ignore stop error
+      }
+      qrReaderRef.current = null;
+    }
+
+    try {
+      const html5QrCode = new Html5Qrcode(scannerContainerId, {
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE,
+        ],
+        verbose: false,
+      });
+
       qrReaderRef.current = html5QrCode;
 
       const config = {
         fps: 15,
-        qrbox: { width: 280, height: 180 },
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const w = Math.floor(viewfinderWidth * 0.85);
+          const h = Math.floor(viewfinderHeight * 0.6);
+          return {
+            width: Math.max(220, Math.min(w, 360)),
+            height: Math.max(140, Math.min(h, 240)),
+          };
+        },
         aspectRatio: 1.333333,
       };
 
-      await html5QrCode.start(
-        { facingMode: facingMode },
-        config,
-        (decodedText) => {
-          handleDetectedBarcode(decodedText);
-        },
-        () => {
-          // Frame scan error - ignore frame noise
-        }
-      );
+      const onScanSuccess = (decodedText: string) => {
+        handleDetectedBarcode(decodedText);
+      };
 
-      setCameraActive(true);
+      const onScanFailure = () => {
+        // Frame scan noise - ignore
+      };
+
+      // Strategy 1: Try requested facingMode
+      let started = false;
+      try {
+        await html5QrCode.start(
+          { facingMode: facingMode },
+          config,
+          onScanSuccess,
+          onScanFailure
+        );
+        started = true;
+      } catch (err1) {
+        console.warn('Strategy 1 (requested facingMode) failed:', err1);
+      }
+
+      // Strategy 2: If environment failed, try user facing camera
+      if (!started && facingMode === 'environment') {
+        try {
+          await html5QrCode.start(
+            { facingMode: 'user' },
+            config,
+            onScanSuccess,
+            onScanFailure
+          );
+          started = true;
+        } catch (err2) {
+          console.warn('Strategy 2 (user facingMode) failed:', err2);
+        }
+      }
+
+      // Strategy 3: Enumerate camera devices and use first available deviceId
+      if (!started) {
+        try {
+          const cameras = await Html5Qrcode.getCameras();
+          if (cameras && cameras.length > 0) {
+            await html5QrCode.start(
+              cameras[0].id,
+              config,
+              onScanSuccess,
+              onScanFailure
+            );
+            started = true;
+          }
+        } catch (err3) {
+          console.warn('Strategy 3 (device enumeration) failed:', err3);
+        }
+      }
+
+      if (started) {
+        setCameraActive(true);
+        setCameraError(null);
+      } else {
+        throw new Error('카메라 장치를 시작할 수 없습니다.');
+      }
     } catch (err: unknown) {
-      console.warn('Camera start error or permission denied:', err);
+      console.warn('Camera start error:', err);
       setCameraActive(false);
-      setCameraError('카메라 연결에 실패했습니다. (권한 허용 또는 시뮬레이션/직접 입력을 이용해주세요)');
+      setCameraError('카메라 연결 권한이 없거나 지원되지 않는 환경입니다.');
+      setShowManualInput(true);
+    } finally {
+      setIsStartingCamera(false);
     }
   };
 
   const stopScanner = async () => {
     if (qrReaderRef.current) {
       try {
-        await qrReaderRef.current.stop();
+        if (qrReaderRef.current.isScanning) {
+          await qrReaderRef.current.stop();
+        }
+        await qrReaderRef.current.clear();
       } catch {
         // Ignore
       }
@@ -140,6 +226,47 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         setNewBookCandidate(candidate);
       } finally {
         setIsLoadingMetadata(false);
+      }
+    }
+  };
+
+  // Image File / Photo Upload Barcode Scan
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsScanningFile(true);
+    try {
+      // Create temporary scanner instance for file scanning if needed
+      let scanner = qrReaderRef.current;
+      if (!scanner) {
+        scanner = new Html5Qrcode(scannerContainerId, {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.QR_CODE,
+          ],
+          verbose: false,
+        });
+      }
+
+      const decodedResult = await scanner.scanFile(file, true);
+      if (decodedResult) {
+        handleDetectedBarcode(decodedResult);
+        onShowToast('바코드 사진을 성공적으로 인식했습니다.');
+      }
+    } catch (err) {
+      console.warn('File scan failed:', err);
+      feedback.playBeep('warning');
+      onShowToast('사진에서 바코드를 인식하지 못했습니다. 선명한 바코드 사진으로 다시 시도해주세요.');
+    } finally {
+      setIsScanningFile(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
     }
   };
@@ -213,7 +340,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         coverImage:
           newBookCandidate.coverImage ||
           'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
-        publishedDate: newBookCandidate.publishedDate || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+        publishedDate:
+          newBookCandidate.publishedDate ||
+          new Date().toISOString().split('T')[0].replace(/-/g, '.'),
       },
       newBookStock,
       `스캐너 신규 도서 등록 (초도 입고: ${newBookStock}권)`
@@ -227,6 +356,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col min-h-[calc(100vh-8rem)] relative select-none">
+      {/* Hidden File Input for Image/Photo Barcode Scan */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+      />
+
       {/* Top Header Controls */}
       <div className="flex items-center justify-between mb-4 px-2">
         <button
@@ -237,13 +376,25 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Barcode Image / Photo Upload Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isScanningFile}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-[#f5f3ee] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3] transition-colors cursor-pointer"
+            title="바코드 사진 파일로 스캔"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">사진/이미지 스캔</span>
+            <span className="sm:hidden">사진</span>
+          </button>
+
           {/* Camera Flip */}
           <button
             onClick={() => setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'))}
             className="p-2 bg-[#f5f3ee] border border-[#c3c7c7] rounded-full text-[#434848] hover:text-[#171e1e] cursor-pointer"
-            title="카메라 전환"
+            title="카메라 전환 (전면/후면)"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${isStartingCamera ? 'animate-spin' : ''}`} />
           </button>
 
           {/* Manual Input Toggle */}
@@ -261,48 +412,56 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         </div>
       </div>
 
-      {/* Manual ISBN Input Drawer */}
+      {/* Manual ISBN Input & Quick Test Barcode Section */}
       {showManualInput && (
-        <div className="mb-4 p-4 bg-[#f5f3ee] border border-[#c3c7c7] rounded-2xl animate-in fade-in duration-150">
-          <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1.5">
-            ISBN 바코드 번호 입력
-          </label>
+        <div className="mb-4 p-4 bg-[#f5f3ee] border border-[#c3c7c7] rounded-2xl animate-in fade-in duration-150 space-y-3 shadow-xs">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block">
+              ISBN 바코드 번호 직접 입력
+            </label>
+            <span className="text-[11px] text-[#737878]">13자리 번호 입력 후 엔터</span>
+          </div>
+
           <div className="flex gap-2">
             <input
               type="text"
               value={manualIsbn}
               onChange={(e) => setManualIsbn(e.target.value)}
               placeholder="예: 9788956608877"
-              className="flex-1 px-3 py-2 bg-white border border-[#c3c7c7] rounded-xl text-sm font-mono focus:border-[#171e1e] outline-none"
+              className="flex-1 px-3.5 py-2.5 bg-white border border-[#c3c7c7] rounded-xl text-sm font-mono focus:border-[#171e1e] outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleDetectedBarcode(manualIsbn);
               }}
             />
             <button
               onClick={() => handleDetectedBarcode(manualIsbn)}
-              className="px-4 py-2 bg-[#171e1e] text-white text-xs font-semibold rounded-xl hover:bg-[#2c3333] cursor-pointer"
+              disabled={!manualIsbn.trim()}
+              className="px-5 py-2.5 bg-[#171e1e] text-white text-xs font-semibold rounded-xl hover:bg-[#2c3333] disabled:opacity-50 cursor-pointer shadow-xs"
             >
               조회
             </button>
           </div>
 
           {/* Quick Demo ISBN Chips */}
-          <div className="mt-3 flex flex-wrap gap-1.5 items-center">
-            <span className="text-[11px] text-[#737878] font-medium flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-[#8ea06b]" /> 테스트 예시:
-            </span>
-            {testIsbns.map((t) => (
-              <button
-                key={t.isbn}
-                onClick={() => {
-                  setManualIsbn(t.isbn);
-                  handleDetectedBarcode(t.isbn);
-                }}
-                className="text-[11px] px-2.5 py-1 bg-white border border-[#c3c7c7] rounded-lg hover:border-[#171e1e] text-[#171e1e] cursor-pointer"
-              >
-                {t.title}
-              </button>
-            ))}
+          <div className="pt-2 border-t border-[#e9e2d1]">
+            <div className="text-[11px] text-[#737878] font-medium flex items-center gap-1 mb-2">
+              <Sparkles className="w-3.5 h-3.5 text-[#8ea06b]" />
+              <span>클릭하여 즉시 테스트할 수 있는 바코드 예시:</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {testIsbns.map((t) => (
+                <button
+                  key={t.isbn}
+                  onClick={() => {
+                    setManualIsbn(t.isbn);
+                    handleDetectedBarcode(t.isbn);
+                  }}
+                  className="text-xs px-3 py-1.5 bg-white border border-[#c3c7c7] rounded-xl hover:border-[#171e1e] hover:bg-[#faf8f3] text-[#171e1e] font-medium cursor-pointer shadow-2xs transition-colors"
+                >
+                  {t.title}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -324,18 +483,18 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         )}
 
         {/* Viewfinder Overlay */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 pointer-events-none z-10">
           <div className="text-white text-center mb-4 drop-shadow-md">
             <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl font-bold mb-1">
-              책 스캔
+              책 바코드 스캔
             </h3>
             <p className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-xs text-white/90">
-              책 뒷면의 바코드를 프레임 안에 맞춰주세요.
+              책 뒷면의 ISBN 13자리 바코드를 사각 프레임 안에 비춰주세요.
             </p>
           </div>
 
           {/* Target Frame */}
-          <div className="relative w-64 h-40 border-2 border-white/50 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
+          <div className="relative w-64 h-36 sm:w-72 sm:h-40 border-2 border-white/60 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
             {/* Corner accents (Sage Green) */}
             <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-[#d6eaaf] rounded-tl-xl" />
             <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-[#d6eaaf] rounded-tr-xl" />
@@ -347,21 +506,40 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           </div>
         </div>
 
-        {/* Retry Camera Button if failed */}
+        {/* Camera Starting / Loading Indicator */}
+        {isStartingCamera && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center text-white z-20 gap-2">
+            <RefreshCw className="w-8 h-8 animate-spin text-[#d6eaaf]" />
+            <span className="text-sm font-semibold">카메라를 연결하는 중입니다...</span>
+          </div>
+        )}
+
+        {/* Camera Error / No Camera fallback Banner */}
         {cameraError && !scannedIsbn && (
-          <div className="absolute bottom-4 left-4 right-4 bg-black/80 backdrop-blur-xs text-white p-3 rounded-xl text-xs flex items-center justify-between gap-2 z-20">
-            <span className="truncate">{cameraError}</span>
-            <button
-              onClick={startScanner}
-              className="px-3 py-1 bg-white text-black font-semibold rounded-lg hover:bg-[#d6eaaf] cursor-pointer"
-            >
-              재시도
-            </button>
+          <div className="absolute bottom-4 left-4 right-4 bg-black/85 backdrop-blur-xs text-white p-3.5 rounded-2xl text-xs flex flex-col sm:flex-row items-center justify-between gap-3 z-20 border border-white/20 shadow-lg">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-[#ffdad6] flex-shrink-0" />
+              <span>{cameraError}</span>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3 py-1.5 bg-[#d6eaaf] text-[#142000] font-bold rounded-xl hover:bg-[#bbce95] cursor-pointer text-xs"
+              >
+                사진 업로드 스캔
+              </button>
+              <button
+                onClick={startScanner}
+                className="px-3 py-1.5 bg-white text-black font-semibold rounded-xl hover:bg-[#eae8e3] cursor-pointer text-xs"
+              >
+                카메라 재시도
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* RESULT SLIDE-UP CARD (Matching Stitch Image 3) */}
+      {/* RESULT SLIDE-UP CARD */}
       {scannedIsbn && (
         <div className="mt-4 bg-[#fbf9f4] rounded-3xl border border-[#c3c7c7] shadow-xl p-5 md:p-6 animate-in slide-in-from-bottom-6 duration-200">
           {/* Drag Handle Decoration */}
@@ -404,7 +582,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 </div>
               </div>
 
-              {/* Rapid Action Buttons [-1 판매] & [+1 입고] (Tactile, large) */}
+              {/* Rapid Action Buttons [-1 판매] & [+1 입고] */}
               <div className="grid grid-cols-2 gap-3.5">
                 {/* Sell Button */}
                 <button
@@ -433,7 +611,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
               {/* Bottom Flow Buttons */}
               <div className="flex flex-col gap-2 pt-1">
-                {/* [다음 책 스캔] - Primary user flow */}
+                {/* [다음 책 스캔] */}
                 <button
                   onClick={handleNextScan}
                   className="w-full py-4 bg-[#171e1e] text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#2c3333] active:scale-[0.98] transition-all text-base shadow-sm cursor-pointer"

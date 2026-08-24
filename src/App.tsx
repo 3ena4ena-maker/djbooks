@@ -74,6 +74,7 @@ export default function App() {
         <Sidebar
           currentView={currentView}
           onNavigate={handleNavigate}
+          onOpenQuickRestock={() => setIsQuickRestockOpen(true)}
           onOpenAddBook={() => setIsAddBookOpen(true)}
         />
 
@@ -81,6 +82,7 @@ export default function App() {
         <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
           {/* Global Sticky Header */}
           <TopHeader
+            onNavigate={handleNavigate}
             onSearch={handleGlobalSearch}
             onOpenScanner={() => handleNavigate('scanner')}
             onOpenAddBook={() => setIsAddBookOpen(true)}

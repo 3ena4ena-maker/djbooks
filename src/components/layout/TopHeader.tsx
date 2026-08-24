@@ -7,12 +7,18 @@ interface TopHeaderProps {
   onNavigate: (view: ViewType) => void;
   onSearch?: (query: string) => void;
   searchQuery?: string;
+  onOpenScanner?: () => void;
+  onOpenAddBook?: () => void;
+  currentView?: ViewType;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
   onNavigate,
   onSearch,
   searchQuery = '',
+  onOpenScanner,
+  onOpenAddBook,
+  currentView,
 }) => {
   const [localQuery, setLocalQuery] = useState(searchQuery);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -99,7 +105,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </button>
 
         <button
-          onClick={() => onNavigate('scanner')}
+          onClick={() => {
+            if (onOpenScanner) {
+              onOpenScanner();
+            } else if (onNavigate) {
+              onNavigate('scanner');
+            }
+          }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#171e1e] text-white text-xs font-semibold hover:bg-[#2c3333] transition-colors shadow-xs cursor-pointer"
           title="바코드 스캔"
         >

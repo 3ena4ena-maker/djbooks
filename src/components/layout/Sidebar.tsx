@@ -15,13 +15,15 @@ import { inventoryStore } from '../../services/inventoryStore';
 interface SidebarProps {
   currentView: ViewType;
   onNavigate: (view: ViewType) => void;
-  onOpenQuickRestock: () => void;
+  onOpenQuickRestock?: () => void;
+  onOpenAddBook?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   onNavigate,
   onOpenQuickRestock,
+  onOpenAddBook,
 }) => {
   const settings = inventoryStore.getSettings();
   const lowStockCount = inventoryStore.getLowStockBooks().length;
@@ -81,7 +83,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Primary CTA Quick Restock */}
       <button
-        onClick={onOpenQuickRestock}
+        onClick={() => {
+          if (onOpenQuickRestock) onOpenQuickRestock();
+          else if (onOpenAddBook) onOpenAddBook();
+        }}
         className="bg-[#171e1e] text-white font-['Public_Sans','Noto_Sans_KR',sans-serif] text-sm font-semibold py-3 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center justify-center gap-2 mb-2 w-full shadow-sm active:scale-[0.98] cursor-pointer"
       >
         <Plus className="w-4 h-4" />

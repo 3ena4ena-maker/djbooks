@@ -62,12 +62,51 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     { isbn: '9791190313186', title: '우리가 빛의 속도로 갈 수 없다면' },
   ];
 
-  // Initialize camera scanner with multi-strategy fallback
+  // Helper to extract descriptive error message based on DOMException name
+  const parseCameraError = (err: unknown): string => {
+    if (!err) return '알 수 없는 이유로 카메라를 시작할 수 없습니다.';
+
+    const errorObj = err as { name?: string; message?: string };
+    const errorName = errorObj.name || (typeof err === 'string' ? err : '');
+    const errorMsg = errorObj.message || String(err);
+
+    console.error('[ScannerView] Camera initialization failed:', {
+      name: errorName,
+      message: errorMsg,
+      raw: err,
+    });
+
+    switch (errorName) {
+      case 'NotAllowedError':
+      case 'PermissionDeniedError':
+        return '카메라 접근 권한이 허용되지 않았습니다. 브라우저 설정에서 카메라 권한을 확인해 주세요.';
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return '사용 가능한 카메라를 찾을 수 없습니다.';
+      case 'OverconstrainedError':
+      case 'ConstraintNotSatisfiedError':
+        return '기기에서 요청한 카메라 해상도/설정을 지원하지 않습니다.';
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return '다른 앱이나 탭에서 카메라를 이미 사용 중입니다. 다른 카메라 앱을 종료 후 재시도해 주세요.';
+      case 'AbortError':
+        return '카메라 연결이 중단되었습니다. 다시 시도해 주세요.';
+      case 'SecurityError':
+        return '보안 정책(HTTPS)으로 인해 카메라에 접근할 수 없습니다.';
+      default:
+        if (errorMsg.includes('Permission') || errorMsg.includes('NotAllowed')) {
+          return '카메라 접근 권한이 필요합니다. 브라우저 사이트 설정에서 카메라 권한을 허용해 주세요.';
+        }
+        return `카메라 시작 실패 (${errorName || '오류'}: ${errorMsg.slice(0, 60)})`;
+    }
+  };
+
+  // Initialize camera scanner safely for mobile devices
   const startScanner = async () => {
     setIsStartingCamera(true);
     setCameraError(null);
 
-    // Stop existing instance safely
+    // 1. Safely stop and clear any existing instance first
     if (qrReaderRef.current) {
       try {
         if (qrReaderRef.current.isScanning) {
@@ -75,7 +114,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         }
         await qrReaderRef.current.clear();
       } catch {
-        // Ignore stop error
+        // Ignore stop error on stale instance
       }
       qrReaderRef.current = null;
     }
@@ -98,7 +137,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
       // 1D EAN-13 / ISBN-13 Optimized scan configuration
       const config = {
-        fps: 20, // Higher scan rate for responsive 1D line detection
+        fps: 20, // Responsive 1D barcode scanning rate
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
           // Horizontal wide rectangle specifically tailored for ISBN-13 (EAN-13) barcode strips
           const w = Math.floor(viewfinderWidth * 0.9);
@@ -110,7 +149,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         },
         disableFlip: false,
         experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true, // Uses native browser hardware barcode detector API when supported
+          useBarCodeDetectorIfSupported: true, // Native browser barcode detector API if supported
         },
       };
 
@@ -119,69 +158,42 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       };
 
       const onScanFailure = () => {
-        // Frame scan noise - ignore
+        // Normal frame scanning failure - ignore
       };
 
-      // High-resolution camera constraints (ideal 1080p, flexible for various mobile devices)
-      const idealCameraConstraints: MediaTrackConstraints = {
+      // 2. Primary camera setup: standard facingMode with gentle ideal resolution (no strict min bounds)
+      const primaryCameraConfig = {
         facingMode: facingMode,
-        width: { min: 640, ideal: 1920 },
-        height: { min: 480, ideal: 1080 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
       };
 
-      // Strategy 1: Try requested facingMode with high resolution constraints
       let started = false;
+      let primaryError: unknown = null;
+
       try {
         await html5QrCode.start(
-          idealCameraConstraints,
+          primaryCameraConfig,
           config,
           onScanSuccess,
           onScanFailure
         );
         started = true;
       } catch (err1) {
-        console.warn('Strategy 1 (high-res constraints) failed, trying standard facingMode:', err1);
+        primaryError = err1;
+        console.warn('[ScannerView] Primary facingMode start failed, trying deviceId fallback:', err1);
       }
 
-      // Strategy 1b: Try standard facingMode without resolution constraints
-      if (!started) {
-        try {
-          await html5QrCode.start(
-            { facingMode: facingMode },
-            config,
-            onScanSuccess,
-            onScanFailure
-          );
-          started = true;
-        } catch (err1b) {
-          console.warn('Strategy 1b (standard facingMode) failed:', err1b);
-        }
-      }
-
-      // Strategy 2: If environment failed, try user facing camera
-      if (!started && facingMode === 'environment') {
-        try {
-          await html5QrCode.start(
-            { facingMode: 'user' },
-            config,
-            onScanSuccess,
-            onScanFailure
-          );
-          started = true;
-        } catch (err2) {
-          console.warn('Strategy 2 (user facingMode) failed:', err2);
-        }
-      }
-
-      // Strategy 3: Enumerate camera devices and use first available deviceId
+      // 3. Single fallback: Enumerate camera devices and select rear camera deviceId
       if (!started) {
         try {
           const cameras = await Html5Qrcode.getCameras();
           if (cameras && cameras.length > 0) {
-            // Prefer back camera if found in device label
-            const backCam = cameras.find((c) =>
-              c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('rear') || c.label.toLowerCase().includes('environment')
-            ) || cameras[0];
+            const backCam =
+              cameras.find((c) => {
+                const label = c.label.toLowerCase();
+                return label.includes('back') || label.includes('rear') || label.includes('environment');
+              }) || cameras[0];
 
             await html5QrCode.start(
               backCam.id,
@@ -190,22 +202,23 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               onScanFailure
             );
             started = true;
+          } else {
+            throw primaryError || new Error('No camera devices available');
           }
-        } catch (err3) {
-          console.warn('Strategy 3 (device enumeration) failed:', err3);
+        } catch (errFallback) {
+          console.warn('[ScannerView] Camera fallback also failed:', errFallback);
+          throw errFallback || primaryError;
         }
       }
 
       if (started) {
         setCameraActive(true);
         setCameraError(null);
-      } else {
-        throw new Error('카메라 장치를 시작할 수 없습니다.');
       }
     } catch (err: unknown) {
-      console.warn('Camera start error:', err);
+      const friendlyMessage = parseCameraError(err);
       setCameraActive(false);
-      setCameraError('카메라 연결 권한이 없거나 지원되지 않는 환경입니다.');
+      setCameraError(friendlyMessage);
       setShowManualInput(true);
     } finally {
       setIsStartingCamera(false);

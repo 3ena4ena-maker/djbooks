@@ -18,7 +18,8 @@ import {
   Image as ImageIcon,
   AlertCircle,
   HelpCircle,
-  CheckCircle2
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
@@ -45,7 +46,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [scannedIsbn, setScannedIsbn] = useState<string | null>(null);
   const [matchedBook, setMatchedBook] = useState<BookWithStock | null>(null);
   const [isNewBook, setIsNewBook] = useState<boolean>(false);
-  const [newBookCandidate, setNewBookCandidate] = useState<Partial<Book> | null>(null);
+  const [newBookCandidate, setNewBookCandidate] = useState<
+    (Partial<Book> & { isExternalFound?: boolean }) | null
+  >(null);
   const [newBookStock, setNewBookStock] = useState<number>(3);
   const [isLoadingMetadata, setIsLoadingMetadata] = useState<boolean>(false);
 
@@ -749,17 +752,41 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           {/* CASE 2: NEW BOOK (NOT IN INVENTORY) */}
           {isNewBook && (
             <div className="space-y-4">
-              <div className="p-3 bg-[#e9e2d1] rounded-2xl flex items-center gap-2 text-xs text-[#1e1c11] font-medium">
-                <Sparkles className="w-4 h-4 text-[#8ea06b] flex-shrink-0" />
-                <span>새로운 책을 찾았습니다! 서점 재고에 바로 등록할 수 있습니다.</span>
-              </div>
-
               {isLoadingMetadata ? (
-                <div className="py-6 text-center text-sm text-[#737878]">
-                  도서 정보를 조회하는 중입니다...
+                <div className="py-8 text-center flex flex-col items-center justify-center gap-3 bg-[#fbf9f4] border border-[#e1ded7] rounded-2xl p-6">
+                  <Loader2 className="w-7 h-7 text-[#171e1e] animate-spin" />
+                  <div className="font-['Public_Sans','Noto_Sans_KR',sans-serif] font-bold text-sm text-[#171e1e]">
+                    도서 정보를 검색하는 중입니다...
+                  </div>
+                  <div className="text-xs text-[#737878]">
+                    ISBN({scannedIsbn})으로 도서 서지 DB에서 책 정보를 자동으로 찾고 있습니다.
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
+                  {/* Status Banner */}
+                  {newBookCandidate?.isExternalFound ? (
+                    <div className="p-3 bg-[#e9f2d8] border border-[#bbce95] rounded-2xl flex items-center gap-2 text-xs text-[#283810] font-medium">
+                      <Sparkles className="w-4 h-4 text-[#5b7529] flex-shrink-0" />
+                      <span>외부 도서 정보를 성공적으로 찾았습니다! 내용을 확인 후 재고에 등록하세요.</span>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-[#fdf4e8] border border-[#f3d3a6] rounded-2xl flex items-start gap-2 text-xs text-[#7a4100] font-medium">
+                      <AlertCircle className="w-4 h-4 text-[#ba6b00] flex-shrink-0 mt-0.5" />
+                      <span>
+                        ISBN은 인식했지만 도서 정보를 찾을 수 없습니다. 책 제목과 저자 정보를 직접 입력해 주세요.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Scanned ISBN Badge */}
+                  <div className="flex items-center justify-between px-3 py-2 bg-[#f2efe9] rounded-xl text-xs">
+                    <span className="text-[#737878] font-medium">인식된 바코드 (ISBN-13)</span>
+                    <span className="font-mono font-bold text-[#171e1e] tracking-wider">
+                      {scannedIsbn}
+                    </span>
+                  </div>
+
                   <div className="flex gap-4">
                     <BookCover
                       src={newBookCandidate?.coverImage}
@@ -767,34 +794,47 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                       size="lg"
                     />
                     <div className="flex-1 min-w-0">
+                      <label className="text-[10px] text-[#737878] font-bold block mb-0.5">
+                        도서명 *
+                      </label>
                       <input
                         type="text"
                         value={newBookCandidate?.title || ''}
                         onChange={(e) =>
                           setNewBookCandidate((prev) => ({ ...prev, title: e.target.value }))
                         }
-                        placeholder="도서명"
-                        className="w-full font-bold text-base bg-white border border-[#c3c7c7] rounded-xl px-3 py-1.5 mb-1.5 focus:border-[#171e1e] outline-none"
+                        placeholder="책 제목을 입력해주세요"
+                        className="w-full font-bold text-base bg-white border border-[#c3c7c7] rounded-xl px-3 py-1.5 mb-2 focus:border-[#171e1e] outline-none"
                       />
                       <div className="grid grid-cols-2 gap-1.5">
-                        <input
-                          type="text"
-                          value={newBookCandidate?.author || ''}
-                          onChange={(e) =>
-                            setNewBookCandidate((prev) => ({ ...prev, author: e.target.value }))
-                          }
-                          placeholder="저자"
-                          className="text-xs bg-white border border-[#c3c7c7] rounded-lg px-2.5 py-1.5 focus:border-[#171e1e] outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={newBookCandidate?.publisher || ''}
-                          onChange={(e) =>
-                            setNewBookCandidate((prev) => ({ ...prev, publisher: e.target.value }))
-                          }
-                          placeholder="출판사"
-                          className="text-xs bg-white border border-[#c3c7c7] rounded-lg px-2.5 py-1.5 focus:border-[#171e1e] outline-none"
-                        />
+                        <div>
+                          <label className="text-[10px] text-[#737878] font-bold block mb-0.5">
+                            저자
+                          </label>
+                          <input
+                            type="text"
+                            value={newBookCandidate?.author || ''}
+                            onChange={(e) =>
+                              setNewBookCandidate((prev) => ({ ...prev, author: e.target.value }))
+                            }
+                            placeholder="저자명"
+                            className="w-full text-xs bg-white border border-[#c3c7c7] rounded-lg px-2.5 py-1.5 focus:border-[#171e1e] outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#737878] font-bold block mb-0.5">
+                            출판사
+                          </label>
+                          <input
+                            type="text"
+                            value={newBookCandidate?.publisher || ''}
+                            onChange={(e) =>
+                              setNewBookCandidate((prev) => ({ ...prev, publisher: e.target.value }))
+                            }
+                            placeholder="출판사명"
+                            className="w-full text-xs bg-white border border-[#c3c7c7] rounded-lg px-2.5 py-1.5 focus:border-[#171e1e] outline-none"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>

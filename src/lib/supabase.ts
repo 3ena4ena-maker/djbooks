@@ -1,12 +1,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Read Supabase credentials from environment variables
+// Read Supabase credentials from environment variables safely
+const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (typeof process !== 'undefined' ? process.env : {}) as any;
+
 const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL || 'https://moubboivhveqdqrwmlkq.supabase.co';
+  env.VITE_SUPABASE_URL || 'https://moubboivhveqdqrwmlkq.supabase.co';
 
 const supabasePublishableKey =
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  env.VITE_SUPABASE_ANON_KEY ||
   '';
 
 export const isSupabaseConfigured = Boolean(

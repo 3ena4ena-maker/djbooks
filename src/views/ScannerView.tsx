@@ -316,7 +316,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   // Handle detected or submitted barcode
   const handleDetectedBarcode = async (rawIsbn: string) => {
-    const cleanIsbn = rawIsbn.replace(/[^0-9X]/gi, '').trim();
+    const cleanIsbn = inventoryStore.normalizeIsbn(rawIsbn);
     if (!cleanIsbn) return;
 
     feedback.playBeep('scan');

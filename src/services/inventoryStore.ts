@@ -916,131 +916,222 @@ class InventoryStore {
   }
 
   /**
-   * External Book lookup with multi-tier API integration (Google Books, OpenLibrary, Kakao)
-   * Retrieves book title, author, publisher, publishedDate, and coverImage by ISBN-13
+   * Normalize raw scanned or input ISBN to valid 13-digit format
    */
-  public async lookupExternalBook(
-    isbn: string
-  ): Promise<(Partial<Book> & { isExternalFound?: boolean }) | null> {
-    const clean = isbn.replace(/[^0-9X]/gi, '').trim();
-    if (!clean) return null;
+  public normalizeIsbn(rawIsbn: string): string {
+    const clean = rawIsbn.replace(/[^0-9X]/gi, '').trim();
+    if (clean.length === 10) {
+      // Convert ISBN-10 to standard ISBN-13
+      const base = '978' + clean.substring(0, 9);
+      let sum = 0;
+      for (let i = 0; i < 12; i++) {
+        sum += parseInt(base[i], 10) * (i % 2 === 0 ? 1 : 3);
+      }
+      const checkDigit = (10 - (sum % 10)) % 10;
+      return base + checkDigit;
+    }
+    return clean;
+  }
 
-    // 1. Check local / Supabase database
-    const supabaseMatch = await this.lookupBookByIsbnInSupabase(clean);
-    if (supabaseMatch) {
-      return { ...supabaseMatch, isExternalFound: true };
+  /**
+   * Helper: Query Aladin Open API by ISBN-13
+   */
+  private async queryAladinApi(
+    isbn13: string
+  ): Promise<(Partial<Book> & { isExternalFound?: boolean }) | null> {
+    const env =
+      typeof import.meta !== 'undefined' && import.meta.env
+        ? import.meta.env
+        : ((typeof process !== 'undefined' ? process.env : {}) as any);
+
+    const ttbKey = env?.VITE_ALADIN_TTB_KEY;
+    const proxyUrl = env?.VITE_ALADIN_API_PROXY_URL;
+
+    // Aladin requires a TTBKey (or proxy endpoint)
+    if (!ttbKey && !proxyUrl) {
+      return null;
     }
 
-    // 2. Try Kakao Books API if VITE_KAKAO_REST_API_KEY is configured
-    const kakaoApiKey = import.meta.env.VITE_KAKAO_REST_API_KEY;
-    if (kakaoApiKey) {
-      try {
-        const kakaoRes = await fetch(
-          `https://dapi.kakao.com/v3/search/book?target=isbn&query=${encodeURIComponent(clean)}`,
-          {
-            headers: {
-              Authorization: `KakaoAK ${kakaoApiKey}`,
-            },
-          }
-        );
-        if (kakaoRes.ok) {
-          const kakaoData = await kakaoRes.json();
-          if (kakaoData.documents && kakaoData.documents.length > 0) {
-            const doc = kakaoData.documents[0];
-            const authors = Array.isArray(doc.authors) ? doc.authors.join(', ') : doc.authors || '';
-            const pubDate = doc.datetime
-              ? doc.datetime.substring(0, 10).replace(/-/g, '.')
-              : new Date().toISOString().split('T')[0].replace(/-/g, '.');
+    console.log('[Aladin] Request started');
 
-            return {
-              isbn: clean,
-              title: doc.title || '',
-              author: authors || '저자 미상',
-              publisher: doc.publisher || '출판사 미상',
-              price: doc.price || doc.sale_price || 15000,
-              category: '소설/일반',
-              publishedDate: pubDate,
-              bindingType: '무선제본',
-              location: '신간 매대',
-              coverImage:
-                doc.thumbnail ||
-                'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
-              description: doc.contents || '',
-              isExternalFound: true,
+    const targetUrl = proxyUrl
+      ? `${proxyUrl}?isbn=${encodeURIComponent(isbn13)}`
+      : `https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey=${encodeURIComponent(
+          ttbKey || ''
+        )}&itemIdType=ISBN13&ItemId=${encodeURIComponent(
+          isbn13
+        )}&output=js&Version=20131101&Cover=Big`;
+
+    let aladinData: any = null;
+    let httpStatus = 0;
+
+    // 1. Try direct fetch with timeout
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const res = await fetch(targetUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      httpStatus = res.status;
+
+      if (res.ok) {
+        const text = await res.text();
+        const cleanJson = text.trim().replace(/;$/, '');
+        aladinData = JSON.parse(cleanJson);
+      }
+    } catch (errDirect) {
+      // 2. In browser clients, if CORS blocks direct fetch, attempt JSONP fallback
+      if (typeof window !== 'undefined' && !proxyUrl && ttbKey) {
+        try {
+          aladinData = await new Promise<any>((resolve, reject) => {
+            const callbackName = `__aladin_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            const script = document.createElement('script');
+            const timer = setTimeout(() => {
+              cleanup();
+              reject(new Error('Aladin JSONP Timeout'));
+            }, 6000);
+
+            const cleanup = () => {
+              clearTimeout(timer);
+              if (script.parentNode) script.parentNode.removeChild(script);
+              delete (window as any)[callbackName];
             };
-          }
+
+            (window as any)[callbackName] = (data: any) => {
+              cleanup();
+              resolve(data);
+            };
+
+            script.onerror = (e) => {
+              cleanup();
+              reject(e);
+            };
+
+            script.src = `https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey=${encodeURIComponent(
+              ttbKey
+            )}&itemIdType=ISBN13&ItemId=${encodeURIComponent(
+              isbn13
+            )}&output=js&Version=20131101&Cover=Big&callback=${callbackName}`;
+
+            document.body.appendChild(script);
+          });
+          httpStatus = 200;
+        } catch (errJsonp) {
+          // JSONP also failed
         }
-      } catch (errKakao) {
-        console.warn('[inventoryStore] Kakao book search failed, falling back to Google Books:', errKakao);
       }
     }
 
-    // 3. Primary Universal API: Google Books API (CORS enabled, No Key Required, Great Korean book coverage)
+    if (httpStatus > 0) {
+      console.log('[Aladin] HTTP Status:', httpStatus);
+    }
+
+    if (aladinData?.item && Array.isArray(aladinData.item) && aladinData.item.length > 0) {
+      const item = aladinData.item[0];
+      const title = item.title || '';
+      const author = item.author || '저자 미상';
+      const publisher = item.publisher || '출판사 미상';
+      let coverImg = item.cover || '';
+      if (coverImg.startsWith('http://')) {
+        coverImg = coverImg.replace('http://', 'https://');
+      }
+      if (!coverImg) {
+        coverImg =
+          'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
+      }
+
+      const rawCategory = item.categoryName || '';
+      const category = rawCategory.includes('>')
+        ? rawCategory.split('>')[1] || rawCategory
+        : rawCategory || '소설/일반';
+
+      const pubDate = item.pubDate
+        ? item.pubDate.replace(/-/g, '.')
+        : new Date().toISOString().split('T')[0].replace(/-/g, '.');
+
+      const price = Number(item.priceStandard) || Number(item.priceSales) || 15000;
+
+      console.log('[Aladin] Result: found');
+      console.log('[Aladin] Title:', title);
+
+      return {
+        isbn: item.isbn13 || isbn13,
+        title,
+        author,
+        publisher,
+        price,
+        category,
+        publishedDate: pubDate,
+        bindingType: '무선제본',
+        location: '신간 매대',
+        coverImage: coverImg,
+        description: item.description || '',
+        isExternalFound: true,
+      };
+    }
+
+    console.log('[Aladin] Result: not found');
+    return null;
+  }
+
+  /**
+   * Helper: Query Google Books API by ISBN-13
+   */
+  private async queryGoogleBooksApi(
+    isbn13: string
+  ): Promise<(Partial<Book> & { isExternalFound?: boolean }) | null> {
+    console.log('[GoogleBooks] Request started');
+
     try {
-      // 3-a. Try precise ISBN query
-      const primaryUrl = `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(clean)}`;
+      // 1st: Precise query with "isbn:"
+      const primaryUrl = `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn13)}`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-      const gBooksRes = await fetch(primaryUrl, { signal: controller.signal });
+      const res = await fetch(primaryUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
 
-      const gBooksStatus = gBooksRes.status;
-      let gBooksData: any = null;
-      if (gBooksRes.ok) {
-        gBooksData = await gBooksRes.json();
-      }
+      console.log('[GoogleBooks] HTTP Status:', res.status);
 
-      console.log(
-        '[GoogleBooks] URL:',
-        primaryUrl,
-        '| HTTP Status:',
-        gBooksStatus,
-        '| Items count:',
-        gBooksData?.items ? gBooksData.items.length : 0
-      );
+      let gBooksData: any = null;
+      if (res.ok) {
+        gBooksData = await res.json();
+      }
 
       let foundItem = gBooksData?.items?.[0];
 
-      // 3-b. Fallback: If 0 items with "isbn:", try direct term search with ISBN
-      if (!foundItem && clean.length >= 10) {
+      // 2nd: Fallback direct term query if isbn: search yields 0 items
+      if (!foundItem && isbn13.length >= 10) {
         try {
-          const fallbackUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(clean)}`;
+          const fallbackUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(isbn13)}`;
           const fbController = new AbortController();
           const fbTimeout = setTimeout(() => fbController.abort(), 4000);
           const fbRes = await fetch(fallbackUrl, { signal: fbController.signal });
           clearTimeout(fbTimeout);
           if (fbRes.ok) {
             const fbData = await fbRes.json();
-            console.log(
-              '[GoogleBooks-Fallback] URL:',
-              fallbackUrl,
-              '| HTTP Status:',
-              fbRes.status,
-              '| Items count:',
-              fbData?.items ? fbData.items.length : 0
-            );
             if (fbData?.items && fbData.items.length > 0) {
               foundItem = fbData.items[0];
             }
           }
-        } catch (errFb) {
-          console.warn('[inventoryStore] Google Books fallback search error:', errFb);
+        } catch {
+          // Ignore fallback error
         }
       }
 
       if (foundItem) {
         const volumeInfo = foundItem.volumeInfo || {};
+        const title = volumeInfo.title || '';
         const authors = Array.isArray(volumeInfo.authors)
           ? volumeInfo.authors.join(', ')
-          : volumeInfo.authors || '';
+          : volumeInfo.authors || '저자 미상';
+        const publisher = volumeInfo.publisher || '출판사 미상';
 
         let coverImg =
           volumeInfo.imageLinks?.thumbnail ||
           volumeInfo.imageLinks?.smallThumbnail ||
           '';
 
-        // Secure image URL (prevent mixed content http warnings)
         if (coverImg.startsWith('http://')) {
           coverImg = coverImg.replace('http://', 'https://');
         }
@@ -1058,14 +1149,17 @@ class InventoryStore {
           ? volumeInfo.publishedDate.replace(/-/g, '.')
           : new Date().toISOString().split('T')[0].replace(/-/g, '.');
 
+        console.log('[GoogleBooks] Result: found');
+        console.log('[GoogleBooks] Title:', title);
+
         return {
-          isbn: clean,
-          title: volumeInfo.title || '',
-          author: authors || '저자 미상',
-          publisher: volumeInfo.publisher || '출판사 미상',
+          isbn: isbn13,
+          title,
+          author: authors,
+          publisher,
           price: 15000,
-          category: category,
-          publishedDate: publishedDate,
+          category,
+          publishedDate,
           bindingType: '무선제본',
           location: '신간 매대',
           coverImage: coverImg,
@@ -1073,69 +1167,106 @@ class InventoryStore {
           isExternalFound: true,
         };
       }
-    } catch (errGBooks) {
-      console.warn('[inventoryStore] Google Books API search failed or timed out:', errGBooks);
+    } catch (err) {
+      console.warn('[GoogleBooks] Search error or timeout');
     }
 
-    // 4. Secondary Backup API: Open Library API (CORS enabled, No Key Required)
+    console.log('[GoogleBooks] Result: not found');
+    return null;
+  }
+
+  /**
+   * External Book lookup with multi-tier API integration:
+   * 1순위: 알라딘 Open API (국내 도서 특화)
+   * 2순위: Google Books API (글로벌/국내 도서 Fallback)
+   * 3순위: Open Library & 프리셋 카탈로그 보조 백업
+   * 최종 실패 시: ISBN 유지 및 사용자 수동 입력 템플릿
+   */
+  public async lookupExternalBook(
+    isbn: string
+  ): Promise<(Partial<Book> & { isExternalFound?: boolean }) | null> {
+    const clean = this.normalizeIsbn(isbn);
+    if (!clean) return null;
+
+    console.log(`[BookLookup] ISBN: ${clean}`);
+
+    // Step 0. Check local / Supabase database first
+    const supabaseMatch = await this.lookupBookByIsbnInSupabase(clean);
+    if (supabaseMatch) {
+      return { ...supabaseMatch, isExternalFound: true };
+    }
+
+    // Step 1 (1순위): Aladin Open API
+    try {
+      const aladinResult = await this.queryAladinApi(clean);
+      if (aladinResult) {
+        console.log('[BookLookup] Using Aladin result');
+        return aladinResult;
+      }
+    } catch (errAladin) {
+      console.warn('[BookLookup] Aladin API step error, proceeding to Google Books');
+    }
+
+    // Step 2 (2순위): Google Books API
+    try {
+      const gBooksResult = await this.queryGoogleBooksApi(clean);
+      if (gBooksResult) {
+        console.log('[BookLookup] Using Google Books result');
+        return gBooksResult;
+      }
+    } catch (errGBooks) {
+      console.warn('[BookLookup] Google Books step error, proceeding to fallback');
+    }
+
+    // Step 3 (3순위 보조 백업): Open Library API
     try {
       const olUrl = `https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(clean)}&format=json&jscmd=data`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
-
       const olRes = await fetch(olUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
 
-      const olStatus = olRes.status;
-      let olData: any = null;
       if (olRes.ok) {
-        olData = await olRes.json();
+        const olData = await olRes.json();
+        const bookKey = `ISBN:${clean}`;
+        if (olData && olData[bookKey]) {
+          const item = olData[bookKey];
+          const authors = Array.isArray(item.authors)
+            ? item.authors.map((a: { name?: string }) => a.name).filter(Boolean).join(', ')
+            : '저자 미상';
+          const publishers = Array.isArray(item.publishers)
+            ? item.publishers.map((p: { name?: string }) => p.name).filter(Boolean).join(', ')
+            : '출판사 미상';
+          let coverImg =
+            item.cover?.large ||
+            item.cover?.medium ||
+            item.cover?.small ||
+            'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
+          if (coverImg.startsWith('http://')) {
+            coverImg = coverImg.replace('http://', 'https://');
+          }
+
+          console.log('[BookLookup] Using Open Library result');
+          return {
+            isbn: clean,
+            title: item.title || '',
+            author: authors,
+            publisher: publishers,
+            price: 15000,
+            category: '일반도서',
+            publishedDate: item.publish_date || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+            bindingType: '무선제본',
+            location: '신간 매대',
+            coverImage: coverImg,
+            isExternalFound: true,
+          };
+        }
       }
-
-      const bookKey = `ISBN:${clean}`;
-      const hasOlItem = Boolean(olData && olData[bookKey]);
-      console.log(
-        '[OpenLibrary] URL:',
-        olUrl,
-        '| HTTP Status:',
-        olStatus,
-        '| Found:',
-        hasOlItem
-      );
-
-      if (hasOlItem) {
-        const item = olData[bookKey];
-        const authors = Array.isArray(item.authors)
-          ? item.authors.map((a: { name?: string }) => a.name).filter(Boolean).join(', ')
-          : '';
-        const publishers = Array.isArray(item.publishers)
-          ? item.publishers.map((p: { name?: string }) => p.name).filter(Boolean).join(', ')
-          : '';
-        const coverImg =
-          item.cover?.large ||
-          item.cover?.medium ||
-          item.cover?.small ||
-          'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
-
-        return {
-          isbn: clean,
-          title: item.title || '',
-          author: authors || '저자 미상',
-          publisher: publishers || '출판사 미상',
-          price: 15000,
-          category: '일반도서',
-          publishedDate: item.publish_date || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
-          bindingType: '무선제본',
-          location: '신간 매대',
-          coverImage: coverImg,
-          isExternalFound: true,
-        };
-      }
-    } catch (errOl) {
-      console.warn('[inventoryStore] Open Library API search failed:', errOl);
+    } catch {
+      // Open Library search skipped
     }
 
-    // 5. Preset Catalog for offline demo ISBNs
+    // Step 4. Preset Catalog for offline demo ISBNs
     const knownIsbnMap: Record<string, Partial<Book>> = {
       '9788937460005': {
         isbn: '9788937460005',
@@ -1144,7 +1275,7 @@ class InventoryStore {
         publisher: '민음사',
         price: 10000,
         category: '고전문학',
-        publishedDate: '2000년 11월 20일',
+        publishedDate: '2000.11.20',
         bindingType: '무선제본',
         location: 'B3 선반, 민음사 세계문학',
         coverImage:
@@ -1157,7 +1288,7 @@ class InventoryStore {
         publisher: '열린책들',
         price: 10800,
         category: '소설',
-        publishedDate: '2015년 10월 20일',
+        publishedDate: '2015.10.20',
         bindingType: '양장본',
         location: 'A5 선반, 스테디셀러',
         coverImage:
@@ -1170,7 +1301,7 @@ class InventoryStore {
         publisher: '문학동네',
         price: 12000,
         category: '고전문학',
-        publishedDate: '2014년 8월 10일',
+        publishedDate: '2014.08.10',
         bindingType: '무선제본',
         location: 'B4 선반, 고전문학',
         coverImage:
@@ -1192,10 +1323,11 @@ class InventoryStore {
     };
 
     if (knownIsbnMap[clean]) {
+      console.log('[BookLookup] Using catalog demo result');
       return { ...knownIsbnMap[clean], isExternalFound: true };
     }
 
-    // 6. Final Clean Fallback Template when not found in external databases
+    // Step 5 (최종 실패): ISBN은 유지하고 제목/저자를 직접 입력할 수 있는 빈 템플릿 반환
     return {
       isbn: clean,
       title: '',

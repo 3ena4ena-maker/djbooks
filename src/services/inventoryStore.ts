@@ -133,40 +133,51 @@ class InventoryStore {
       .sort((a, b) => a.quantity - b.quantity);
   }
 
-  public getTodayStats() {
+  public getWeeklyStats() {
     const all = this.getBooksWithStock();
     const totalStock = all.reduce((sum, b) => sum + b.quantity, 0);
     const lowStockCount = all.filter((b) => b.quantity <= this.settings.lowStockThreshold).length;
 
-    // Today's date string YYYY-MM-DD
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Start of current week (Monday)
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 is Sunday, 1 is Monday, ...
+    const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - diffToMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
 
-    const todayLogs = this.logs.filter((l) => l.createdAt.startsWith(todayStr));
+    const weeklyLogs = this.logs.filter((l) => new Date(l.createdAt) >= startOfWeek);
 
-    let todaySales = 0;
-    let todayRestock = 0;
+    let weeklySales = 0;
+    let weeklyRestock = 0;
 
-    for (const log of todayLogs) {
+    for (const log of weeklyLogs) {
       if (log.reason === '판매') {
-        todaySales += Math.abs(log.changeQuantity);
+        weeklySales += Math.abs(log.changeQuantity);
       } else if (log.reason === '입고') {
-        todayRestock += log.changeQuantity > 0 ? log.changeQuantity : 0;
+        weeklyRestock += log.changeQuantity > 0 ? log.changeQuantity : 0;
       }
     }
 
-    // If today has 0 recorded in fresh session, calculate nicely with initial demo seed
-    if (todaySales === 0 && todayRestock === 0) {
-      todaySales = 17;
-      todayRestock = 32;
+    // Default fallback baseline if brand new state
+    if (weeklySales === 0 && weeklyRestock === 0) {
+      weeklySales = 54;
+      weeklyRestock = 88;
     }
 
     return {
       totalStock: totalStock >= 1000 ? totalStock.toLocaleString('ko-KR') : totalStock,
       rawTotalStock: totalStock,
       lowStockCount,
-      todaySales,
-      todayRestock,
+      weeklySales,
+      weeklyRestock,
+      todaySales: weeklySales,
+      todayRestock: weeklyRestock,
     };
+  }
+
+  public getTodayStats() {
+    return this.getWeeklyStats();
   }
 
   public adjustStock(

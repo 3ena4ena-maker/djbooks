@@ -32,7 +32,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenQuickRestock,
   onFilterLowStock,
 }) => {
-  const stats = inventoryStore.getTodayStats();
+  const stats = inventoryStore.getWeeklyStats();
   const lowStockBooks = inventoryStore.getLowStockBooks().slice(0, 4);
   const recentLogs = inventoryStore.getLogs().slice(0, 5);
 
@@ -59,10 +59,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Title & Atmosphere Header */}
       <div>
         <h2 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#171e1e] mb-2 tracking-tight">
-          오늘의 서점
+          서점 대시보드
         </h2>
         <p className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-base text-[#434848]">
-          오늘 서점의 재고 현황을 확인해보세요.
+          이번주 서점의 재고 현황과 입출고 흐름을 확인해보세요.
         </p>
       </div>
 
@@ -98,26 +98,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Stat 3: 오늘 입고 */}
+        {/* Stat 3: 이번주 입고 */}
         <div className="bg-[#f5f3ee] rounded-2xl p-5 md:p-6 border border-[#e9e2d1] border-t-4 border-t-[#bbce95] flex flex-col justify-between shadow-xs">
           <span className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-xs font-bold uppercase tracking-wider text-[#434848] mb-3 flex items-center gap-1.5">
             <TrendingUp className="w-4 h-4 text-[#3c4c20]" />
-            오늘 입고
+            이번주 입고
           </span>
           <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#3c4c20]">
-            +{stats.todayRestock}
+            +{stats.weeklyRestock}
             <span className="text-base font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-1">권</span>
           </div>
         </div>
 
-        {/* Stat 4: 오늘 판매 */}
+        {/* Stat 4: 이번주 판매 */}
         <div className="bg-[#f5f3ee] rounded-2xl p-5 md:p-6 border border-[#e9e2d1] border-t-4 border-t-[#c3c7c7] flex flex-col justify-between shadow-xs">
           <span className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-xs font-bold uppercase tracking-wider text-[#434848] mb-3 flex items-center gap-1.5">
             <ShoppingBag className="w-4 h-4 text-[#737878]" />
-            오늘 판매
+            이번주 판매
           </span>
           <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#434848]">
-            -{stats.todaySales}
+            -{stats.weeklySales}
             <span className="text-base font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-1">권</span>
           </div>
         </div>

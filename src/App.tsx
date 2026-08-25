@@ -38,6 +38,14 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Clean initial hash if it is dashboard/home
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#\/?/, '').trim();
+    if (hash === 'dashboard' || hash === 'home') {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
+
   // Modals state
   const [isAddBookOpen, setIsAddBookOpen] = useState(false);
   const [isQuickRestockOpen, setIsQuickRestockOpen] = useState(false);
@@ -60,6 +68,9 @@ export default function App() {
       if (bookId) {
         setSelectedBookId(bookId);
       }
+      if (view === 'dashboard' && window.location.hash) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     };
 
     window.addEventListener('hashchange', handleHashChange);
@@ -69,7 +80,9 @@ export default function App() {
   const handleNavigate = (view: ViewType) => {
     setCurrentView(view);
     if (view === 'dashboard') {
-      window.location.hash = '#/dashboard';
+      if (window.location.hash) {
+        history.pushState(null, '', window.location.pathname + window.location.search);
+      }
     } else {
       window.location.hash = `#/${view}`;
     }

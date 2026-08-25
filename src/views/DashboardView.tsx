@@ -32,6 +32,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenQuickRestock,
   onFilterLowStock,
 }) => {
+  const settings = inventoryStore.getSettings();
   const stats = inventoryStore.getWeeklyStats();
   const lowStockBooks = inventoryStore.getLowStockBooks().slice(0, 4);
   const recentLogs = inventoryStore.getLogs().slice(0, 5);
@@ -58,11 +59,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="w-full max-w-7xl mx-auto space-y-8 select-none">
       {/* Title & Atmosphere Header */}
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-bold text-[#434848] bg-[#f0eee9] px-2.5 py-1 rounded-full border border-[#c3c7c7]">
+            📍 {settings.branchName || '본점'}
+          </span>
+          <span className="text-xs text-[#737878]">독립서점 재고 관리 시스템</span>
+        </div>
         <h2 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#171e1e] mb-2 tracking-tight">
-          서점 대시보드
+          {settings.storeName ? `${settings.storeName} 대시보드` : '서점 대시보드'}
         </h2>
         <p className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-base text-[#434848]">
-          이번주 서점의 재고 현황과 입출고 흐름을 확인해보세요.
+          {settings.storeName || '책방'}의 실시간 재고 현황과 입출고 흐름을 확인해보세요.
         </p>
       </div>
 

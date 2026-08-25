@@ -46,14 +46,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     }
   };
 
+  const settings = inventoryStore.getSettings();
+
   return (
     <header className="bg-[#fbf9f4] border-b border-[#c3c7c7] fixed top-0 w-full z-30 flex justify-between items-center h-16 px-4 md:px-8 lg:ml-64 lg:w-[calc(100%-16rem)] select-none">
-      {/* Mobile Title */}
+      {/* Mobile Title with Store Name */}
       <div
-        className="lg:hidden font-['Playfair_Display','Noto_Serif_KR',serif] text-xl font-bold text-[#171e1e] cursor-pointer"
+        className="lg:hidden font-['Playfair_Display','Noto_Serif_KR',serif] text-lg sm:text-xl font-bold text-[#171e1e] cursor-pointer truncate max-w-[200px]"
         onClick={() => onNavigate('dashboard')}
+        title={settings.storeName || '책방 재고'}
       >
-        책방 재고
+        {settings.storeName || '책방 재고'}
       </div>
 
       {/* Global Search Bar (Desktop) */}

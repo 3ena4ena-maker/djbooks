@@ -47,7 +47,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onShowToast }) => {
       inventoryStore.resetToSampleData();
       feedback.playBeep('success');
       onShowToast('샘플 데이터로 초기화되었습니다.');
-      setStoreName('책방 재고');
+      setStoreName('독자서점');
       setBranchName('본점');
       setThreshold(3);
     }
@@ -107,9 +107,27 @@ CREATE TABLE IF NOT EXISTS inventory_logs (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Index for instant barcode / ISBN lookup
+CREATE TABLE IF NOT EXISTS customer_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  book_title TEXT NOT NULL,
+  book_author TEXT,
+  book_publisher TEXT,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  customer_name TEXT NOT NULL,
+  customer_contact TEXT NOT NULL,
+  deposit_paid BOOLEAN DEFAULT false,
+  order_price NUMERIC(10, 2),
+  status VARCHAR(32) NOT NULL DEFAULT '주문접수',
+  note TEXT,
+  order_date VARCHAR(32),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+-- Index for instant lookup
 CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn);
 CREATE INDEX IF NOT EXISTS idx_inventory_logs_book_id ON inventory_logs(book_id);
+CREATE INDEX IF NOT EXISTS idx_customer_orders_status ON customer_orders(status);
 `;
 
   return (

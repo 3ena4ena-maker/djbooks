@@ -99,3 +99,20 @@ export interface CustomerOrder {
   completedAt?: string; // 수령/판매 완료 일시
 }
 
+export interface DbCustomerOrder {
+  id: string;
+  book_title: string;
+  book_author?: string | null;
+  book_publisher?: string | null;
+  quantity: number;
+  customer_name: string;
+  customer_contact: string;
+  deposit_paid?: boolean | null;
+  order_price?: number | null;
+  status: string;
+  note?: string | null;
+  order_date: string;
+  created_at: string;
+  completed_at?: string | null;
+}
+

@@ -168,10 +168,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <span className="text-xs text-[#737878]">독립서점 재고 및 손님 주문 관리 시스템</span>
         </div>
         <h2 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#171e1e] mb-2 tracking-tight">
-          {settings.storeName ? `${settings.storeName} 대시보드` : '서점 대시보드'}
+          {settings.storeName ? `${settings.storeName} 대시보드` : '독자서점 대시보드'}
         </h2>
         <p className="text-base text-[#434848]">
-          {settings.storeName || '책방'}의 실시간 재고 현황, 손님 주문 목록 및 입출고 흐름을 확인해보세요.
+          {settings.storeName || '독자서점'}의 실시간 재고 현황, 손님 주문 목록 및 입출고 흐름을 확인해보세요.
         </p>
       </div>
 

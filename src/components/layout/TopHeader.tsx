@@ -58,7 +58,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   };
 
   return (
-    <header className="bg-[#fbf9f4] border-b border-[#c3c7c7] fixed top-0 w-full z-30 flex justify-between items-center h-16 px-4 md:px-8 lg:ml-64 lg:w-[calc(100%-16rem)] select-none">
+    <header className="bg-[#fbf9f4] border-b border-[#c3c7c7] fixed top-0 left-0 right-0 lg:left-64 z-30 flex justify-between items-center h-16 px-4 md:px-8 select-none">
       {/* Mobile Title with Store Name & Current Page */}
       <div className="lg:hidden flex items-center gap-2">
         <span

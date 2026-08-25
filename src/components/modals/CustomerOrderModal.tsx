@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CustomerOrder, CustomerOrderStatus } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
 import { feedback } from '../../utils/feedback';
@@ -13,7 +13,11 @@ import {
   CreditCard,
   FileText,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  Sparkles,
+  Store,
+  Globe,
 } from 'lucide-react';
 
 interface CustomerOrderModalProps {
@@ -43,29 +47,79 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
     order?.orderDate || new Date().toISOString().split('T')[0].replace(/-/g, '.')
   );
 
-  // Quick book autocomplete search
+  // Book search & autocomplete
   const [searchQuery, setSearchQuery] = useState('');
-  const [matchingBooks, setMatchingBooks] = useState<ReturnType<typeof inventoryStore.getBooksWithStock>>([]);
+  const [searchResults, setSearchResults] = useState<
+    Array<{
+      id?: string;
+      isbn?: string;
+      title: string;
+      author: string;
+      publisher: string;
+      price: number;
+      coverImage?: string;
+      inStock: boolean;
+      quantity: number;
+      source: '매장 재고' | '도서 DB';
+    }>
+  >([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
+  // Debounced auto-search when typing
   useEffect(() => {
-    if (searchQuery.trim().length >= 1) {
-      const q = searchQuery.toLowerCase();
-      const results = inventoryStore.getBooksWithStock().filter(
-        (b) =>
-          b.title.toLowerCase().includes(q) ||
-          b.author.toLowerCase().includes(q) ||
-          (b.publisher && b.publisher.toLowerCase().includes(q))
-      );
-      setMatchingBooks(results.slice(0, 5));
-      setShowDropdown(true);
-    } else {
-      setMatchingBooks([]);
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
       setShowDropdown(false);
+      setIsSearching(false);
+      setHasSearched(false);
+      return;
     }
+
+    const timer = setTimeout(() => {
+      performBookSearch(searchQuery.trim());
+    }, 350);
+
+    return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const handleSelectBook = (b: ReturnType<typeof inventoryStore.getBooksWithStock>[0]) => {
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const performBookSearch = async (queryText: string) => {
+    if (!queryText.trim()) return;
+    setIsSearching(true);
+    setHasSearched(true);
+    try {
+      const results = await inventoryStore.searchBooksByKeyword(queryText);
+      setSearchResults(results);
+      setShowDropdown(true);
+    } catch (err) {
+      console.error('Book search failed:', err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSelectBook = (b: {
+    title: string;
+    author: string;
+    publisher: string;
+    price: number;
+  }) => {
     setBookTitle(b.title);
     setBookAuthor(b.author);
     setBookPublisher(b.publisher || '');
@@ -74,6 +128,15 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
     }
     setSearchQuery('');
     setShowDropdown(false);
+    feedback.playBeep('success');
+  };
+
+  // Quick lookup from bookTitle field
+  const handleQuickTitleSearch = () => {
+    if (bookTitle.trim()) {
+      setSearchQuery(bookTitle.trim());
+      performBookSearch(bookTitle.trim());
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -152,42 +215,144 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
 
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto flex flex-col gap-4 text-sm flex-1">
-          {/* Search existing inventory */}
+          {/* Quick Book Search & Auto-Fill */}
           {!isEditing && (
-            <div className="relative">
-              <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1">
-                기존 등록 도서에서 찾기 (선택)
-              </label>
-              <div className="relative">
-                <Search className="w-4 h-4 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
+            <div ref={searchContainerRef} className="relative">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className="text-xs font-bold text-[#171e1e] flex items-center gap-1.5 truncate">
+                  <Sparkles className="w-3.5 h-3.5 text-[#8ea06b] shrink-0" />
+                  <span>도서명/저자 통합 검색</span>
+                </label>
+                <span className="text-[11px] text-[#737878] shrink-0">매장 재고 및 도서 DB</span>
+              </div>
+
+              <div className="relative flex items-center">
+                <Search className="w-4 h-4 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="도서명 또는 저자명을 검색하여 자동 입력"
-                  className="w-full pl-9 pr-3 py-2 bg-[#fbf9f4] border border-[#c3c7c7] rounded-xl focus:border-[#171e1e] outline-none text-xs"
+                  onFocus={() => {
+                    if (searchResults.length > 0) setShowDropdown(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      performBookSearch(searchQuery);
+                    }
+                  }}
+                  placeholder="도서명 또는 저자명을 입력하세요 (예: 달러구트, 데미안, 불편한 편의점)"
+                  className="w-full pl-9 pr-20 py-2.5 bg-[#fbf9f4] border border-[#c3c7c7] rounded-xl focus:border-[#171e1e] focus:bg-white outline-none text-xs transition-all shadow-2xs"
                 />
+
+                <div className="absolute right-1.5 flex items-center gap-1">
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSearchResults([]);
+                        setShowDropdown(false);
+                      }}
+                      className="p-1 text-[#737878] hover:text-[#171e1e] rounded-md hover:bg-[#e4e2dd] transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => performBookSearch(searchQuery)}
+                    disabled={isSearching || !searchQuery.trim()}
+                    className="px-2.5 py-1 bg-[#171e1e] text-white rounded-lg text-xs font-medium hover:bg-[#2c3333] transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isSearching ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Search className="w-3 h-3" />
+                    )}
+                    <span>검색</span>
+                  </button>
+                </div>
               </div>
 
               {/* Autocomplete Dropdown */}
-              {showDropdown && matchingBooks.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#c3c7c7] rounded-xl shadow-lg z-20 overflow-hidden divide-y divide-[#f0eee9]">
-                  {matchingBooks.map((b) => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => handleSelectBook(b)}
-                      className="w-full p-2.5 text-left hover:bg-[#f5f3ee] flex items-center justify-between text-xs cursor-pointer"
-                    >
-                      <div>
-                        <span className="font-bold text-[#171e1e] block truncate">{b.title}</span>
-                        <span className="text-[11px] text-[#737878]">{b.author} · {b.publisher || '독립출판'}</span>
+              {showDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-[#c3c7c7] rounded-2xl shadow-xl z-30 overflow-hidden divide-y divide-[#f0eee9] max-h-64 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
+                  {isSearching ? (
+                    <div className="p-4 text-center text-xs text-[#737878] flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-[#171e1e]" />
+                      <span>도서 정보를 검색하고 있습니다...</span>
+                    </div>
+                  ) : searchResults.length > 0 ? (
+                    <>
+                      <div className="px-3 py-1.5 bg-[#f5f3ee] text-[11px] font-bold text-[#434848] flex items-center justify-between">
+                        <span>검색 결과 ({searchResults.length}건)</span>
+                        <span className="text-[10px] text-[#737878]">클릭 시 도서 정보가 자동 입력됩니다</span>
                       </div>
-                      <span className="text-[11px] font-bold text-[#3c4c20] bg-[#f0eee9] px-2 py-0.5 rounded-full">
-                        재고 {b.quantity}권
-                      </span>
-                    </button>
-                  ))}
+                      {searchResults.map((b, idx) => (
+                        <button
+                          key={`${b.title}-${b.author}-${idx}`}
+                          type="button"
+                          onClick={() => handleSelectBook(b)}
+                          className="w-full p-2.5 text-left hover:bg-[#f5f3ee] flex items-center justify-between text-xs cursor-pointer transition-colors group"
+                        >
+                          <div className="min-w-0 flex-1 pr-2">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm flex items-center gap-1 flex-shrink-0 ${
+                                  b.source === '매장 재고'
+                                    ? 'bg-[#e7eedb] text-[#3c4c20] border border-[#d2dec0]'
+                                    : 'bg-[#f0eee9] text-[#434848]'
+                                }`}
+                              >
+                                {b.source === '매장 재고' ? (
+                                  <>
+                                    <Store className="w-2.5 h-2.5" />
+                                    <span>매장도서</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Globe className="w-2.5 h-2.5" />
+                                    <span>도서DB</span>
+                                  </>
+                                )}
+                              </span>
+                              <span className="font-bold text-[#171e1e] group-hover:text-[#3c4c20] truncate block">
+                                {b.title}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-[#737878] mt-0.5 truncate pl-0.5">
+                              {b.author} · {b.publisher || '출판사 미상'}
+                              {b.price ? ` · ${b.price.toLocaleString()}원` : ''}
+                            </div>
+                          </div>
+
+                          <div className="flex-shrink-0 text-right">
+                            {b.source === '매장 재고' ? (
+                              <span
+                                className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                  b.quantity > 0
+                                    ? 'bg-[#e7eedb] text-[#3c4c20]'
+                                    : 'bg-[#ffcdd2]/40 text-[#c62828]'
+                                }`}
+                              >
+                                재고 {b.quantity}권
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-[#737878] bg-[#f5f3ee] px-2 py-0.5 rounded-md">
+                                자동완성
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </>
+                  ) : hasSearched ? (
+                    <div className="p-4 text-center text-xs text-[#737878]">
+                      <p className="font-medium text-[#171e1e] mb-1">일치하는 검색 결과가 없습니다.</p>
+                      <p className="text-[11px]">아래 도서 정보 입력란에 직접 도서명을 입력해주세요.</p>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -195,10 +360,22 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
 
           {/* Book Info */}
           <div className="space-y-3 p-3.5 bg-[#fbf9f4] rounded-2xl border border-[#c3c7c7]">
-            <span className="text-xs font-bold text-[#171e1e] flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5 text-[#737878]" />
-              도서 정보
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#171e1e] flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-[#737878]" />
+                도서 정보
+              </span>
+              {!isEditing && bookTitle.trim() && (
+                <button
+                  type="button"
+                  onClick={handleQuickTitleSearch}
+                  className="text-[11px] text-[#3c4c20] hover:text-[#171e1e] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>이 제목으로 정보 찾기</span>
+                </button>
+              )}
+            </div>
 
             <div>
               <label className="text-xs font-bold text-[#434848] block mb-1">
@@ -250,7 +427,10 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
                   type="number"
                   min="1"
                   value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => {
+                    const newQty = Math.max(1, parseInt(e.target.value) || 1);
+                    setQuantity(newQty);
+                  }}
                   className="w-full px-3 py-2 bg-white border border-[#c3c7c7] rounded-xl focus:border-[#171e1e] outline-none text-xs font-bold text-center"
                 />
               </div>

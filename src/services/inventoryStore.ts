@@ -9,6 +9,7 @@ import {
   DbInventoryTransaction,
   CustomerOrder,
   CustomerOrderStatus,
+  DbCustomerOrder,
 } from '../types';
 import { INITIAL_BOOKS, INITIAL_INVENTORY, INITIAL_LOGS } from '../data/mockData';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -78,7 +79,7 @@ export interface AppSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  storeName: '책방 재고',
+  storeName: '독자서점',
   branchName: '본점',
   lowStockThreshold: 3,
   soundEnabled: true,
@@ -181,7 +182,11 @@ class InventoryStore {
       this.inventory = parsedInventory;
       this.logs = parsedLogs;
       this.orders = parsedOrders;
-      this.settings = storedSettings ? JSON.parse(storedSettings) : { ...DEFAULT_SETTINGS };
+      let loadedSettings: AppSettings = storedSettings ? JSON.parse(storedSettings) : { ...DEFAULT_SETTINGS };
+      if (!loadedSettings.storeName || loadedSettings.storeName === '책방 재고') {
+        loadedSettings.storeName = '독자서점';
+      }
+      this.settings = loadedSettings;
     } catch (e) {
       console.warn('Failed to load local cache, fallback to initial state', e);
       this.books = [...INITIAL_BOOKS];
@@ -321,6 +326,36 @@ class InventoryStore {
         }
       );
 
+      // 4. Fetch Customer Orders from Supabase
+      try {
+        const { data: dbOrders, error: ordersError } = await supabase
+          .from('customer_orders')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!ordersError && Array.isArray(dbOrders)) {
+          const mappedOrders: CustomerOrder[] = dbOrders.map((o: DbCustomerOrder) => ({
+            id: o.id,
+            bookTitle: o.book_title,
+            bookAuthor: o.book_author || undefined,
+            bookPublisher: o.book_publisher || undefined,
+            quantity: Number(o.quantity) || 1,
+            customerName: o.customer_name,
+            customerContact: o.customer_contact,
+            depositPaid: Boolean(o.deposit_paid),
+            orderPrice: o.order_price ? Number(o.order_price) : undefined,
+            status: (o.status as CustomerOrderStatus) || '주문접수',
+            note: o.note || undefined,
+            orderDate: o.order_date || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+            createdAt: o.created_at || new Date().toISOString(),
+            completedAt: o.completed_at || undefined,
+          }));
+          this.orders = mappedOrders;
+        }
+      } catch (orderErr) {
+        console.warn('Customer orders fetch skipped or failed:', orderErr);
+      }
+
       this.books = mappedBooks;
       this.inventory = invMap;
       this.locations = locMap;
@@ -415,6 +450,13 @@ class InventoryStore {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'inventory_transactions' },
+          () => {
+            this.fetchFromSupabase();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'customer_orders' },
           () => {
             this.fetchFromSupabase();
           }
@@ -1020,14 +1062,41 @@ class InventoryStore {
 
   public addCustomerOrder(orderData: Omit<CustomerOrder, 'id' | 'createdAt'>): CustomerOrder {
     const now = new Date().toISOString();
+    const newId = generateUUID();
     const newOrder: CustomerOrder = {
       ...orderData,
-      id: generateUUID(),
+      id: newId,
       createdAt: now,
       completedAt: orderData.status === '수령완료' ? (orderData.completedAt || now) : undefined,
     };
     this.orders = [newOrder, ...this.orders];
     this.saveToStorage();
+
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          await supabase.from('customer_orders').insert({
+            id: newId,
+            book_title: orderData.bookTitle,
+            book_author: orderData.bookAuthor || null,
+            book_publisher: orderData.bookPublisher || null,
+            quantity: orderData.quantity,
+            customer_name: orderData.customerName,
+            customer_contact: orderData.customerContact,
+            deposit_paid: orderData.depositPaid ?? false,
+            order_price: orderData.orderPrice || null,
+            status: orderData.status,
+            note: orderData.note || null,
+            order_date: orderData.orderDate,
+            created_at: now,
+            completed_at: newOrder.completedAt || null,
+          });
+        } catch (e) {
+          console.error('Error adding customer order to Supabase:', e);
+        }
+      })();
+    }
+
     return newOrder;
   }
 
@@ -1037,16 +1106,34 @@ class InventoryStore {
 
     const existing = this.orders[orderIndex];
     const now = new Date().toISOString();
+    const completedAt =
+      status === '수령완료'
+        ? (existing.completedAt || now)
+        : (status === '취소됨' ? undefined : existing.completedAt);
 
     this.orders[orderIndex] = {
       ...existing,
       status,
-      completedAt:
-        status === '수령완료'
-          ? (existing.completedAt || now)
-          : (status === '취소됨' ? undefined : existing.completedAt),
+      completedAt,
     };
     this.saveToStorage();
+
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          await supabase
+            .from('customer_orders')
+            .update({
+              status,
+              completed_at: completedAt || null,
+            })
+            .eq('id', orderId);
+        } catch (e) {
+          console.error('Error updating customer order status in Supabase:', e);
+        }
+      })();
+    }
+
     return true;
   }
 
@@ -1057,16 +1144,42 @@ class InventoryStore {
     const existing = this.orders[orderIndex];
     const now = new Date().toISOString();
     const nextStatus = updates.status ?? existing.status;
+    const completedAt =
+      nextStatus === '수령완료'
+        ? (updates.completedAt ?? existing.completedAt ?? now)
+        : updates.completedAt;
 
     this.orders[orderIndex] = {
       ...existing,
       ...updates,
-      completedAt:
-        nextStatus === '수령완료'
-          ? (updates.completedAt ?? existing.completedAt ?? now)
-          : updates.completedAt,
+      completedAt,
     };
     this.saveToStorage();
+
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          const payload: Record<string, unknown> = {};
+          if (updates.bookTitle !== undefined) payload.book_title = updates.bookTitle;
+          if (updates.bookAuthor !== undefined) payload.book_author = updates.bookAuthor;
+          if (updates.bookPublisher !== undefined) payload.book_publisher = updates.bookPublisher;
+          if (updates.quantity !== undefined) payload.quantity = updates.quantity;
+          if (updates.customerName !== undefined) payload.customer_name = updates.customerName;
+          if (updates.customerContact !== undefined) payload.customer_contact = updates.customerContact;
+          if (updates.depositPaid !== undefined) payload.deposit_paid = updates.depositPaid;
+          if (updates.orderPrice !== undefined) payload.order_price = updates.orderPrice;
+          if (updates.status !== undefined) payload.status = updates.status;
+          if (updates.note !== undefined) payload.note = updates.note;
+          if (updates.orderDate !== undefined) payload.order_date = updates.orderDate;
+          if (completedAt !== undefined) payload.completed_at = completedAt;
+
+          await supabase.from('customer_orders').update(payload).eq('id', orderId);
+        } catch (e) {
+          console.error('Error updating customer order in Supabase:', e);
+        }
+      })();
+    }
+
     return true;
   }
 
@@ -1075,6 +1188,17 @@ class InventoryStore {
     this.orders = this.orders.filter((o) => o.id !== orderId);
     if (this.orders.length !== prevLength) {
       this.saveToStorage();
+
+      if (isSupabaseConfigured) {
+        (async () => {
+          try {
+            await supabase.from('customer_orders').delete().eq('id', orderId);
+          } catch (e) {
+            console.error('Error deleting customer order from Supabase:', e);
+          }
+        })();
+      }
+
       return true;
     }
     return false;
@@ -1436,6 +1560,458 @@ class InventoryStore {
         'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
       isExternalFound: false,
     };
+  }
+
+  /**
+   * Search books by keyword (title, author, publisher, isbn) across:
+   * 1. Local bookstore inventory
+   * 2. Preset catalog
+   * 3. Google Books & Open Library APIs
+   */
+  public async searchBooksByKeyword(keyword: string): Promise<
+    Array<{
+      id?: string;
+      isbn?: string;
+      title: string;
+      author: string;
+      publisher: string;
+      price: number;
+      coverImage?: string;
+      inStock: boolean;
+      quantity: number;
+      source: '매장 재고' | '도서 DB';
+    }>
+  > {
+    const q = keyword.trim().toLowerCase();
+    if (!q) return [];
+
+    const results: Array<{
+      id?: string;
+      isbn?: string;
+      title: string;
+      author: string;
+      publisher: string;
+      price: number;
+      coverImage?: string;
+      inStock: boolean;
+      quantity: number;
+      source: '매장 재고' | '도서 DB';
+    }> = [];
+
+    const seenTitles = new Set<string>();
+
+    // 1. Search local bookstore inventory
+    const localBooks = this.getBooksWithStock();
+    for (const b of localBooks) {
+      const match =
+        b.title.toLowerCase().includes(q) ||
+        b.author.toLowerCase().includes(q) ||
+        (b.publisher && b.publisher.toLowerCase().includes(q)) ||
+        (b.isbn && b.isbn.toLowerCase().includes(q));
+
+      if (match) {
+        const key = `${b.title.trim().toLowerCase()}|${b.author.trim().toLowerCase()}`;
+        if (!seenTitles.has(key)) {
+          seenTitles.add(key);
+          results.push({
+            id: b.id,
+            isbn: b.isbn,
+            title: b.title,
+            author: b.author,
+            publisher: b.publisher || '독립출판',
+            price: b.price || 15000,
+            coverImage: b.coverImage,
+            inStock: b.quantity > 0,
+            quantity: b.quantity,
+            source: '매장 재고',
+          });
+        }
+      }
+    }
+
+    // 2. Query Server Aladin / Google Books Proxy (/api/aladin?query=...)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`/api/aladin?query=${encodeURIComponent(q)}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.books)) {
+          for (const item of data.books) {
+            const key = `${item.title.trim().toLowerCase()}|${(item.author || '').trim().toLowerCase()}`;
+            if (!seenTitles.has(key) && item.title) {
+              seenTitles.add(key);
+              results.push({
+                isbn: item.isbn || '',
+                title: item.title,
+                author: item.author || '저자 미상',
+                publisher: item.publisher || '출판사 미상',
+                price: item.price || 15000,
+                coverImage: item.coverImage,
+                inStock: false,
+                quantity: 0,
+                source: '도서 DB',
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore proxy error and continue to catalog & direct fallback
+    }
+
+    // 3. Preset catalog search (Rich Korean Independent Bookstore / Bestseller Library)
+    const presetCatalog = [
+      {
+        isbn: '9791165341909',
+        title: '달러구트 꿈 백화점 (주문하신 꿈은 매진입니다)',
+        author: '이미예',
+        publisher: '팩토리나인',
+        price: 13800,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791165343729',
+        title: '달러구트 꿈 백화점 2 (단골손님을 찾습니다)',
+        author: '이미예',
+        publisher: '팩토리나인',
+        price: 13800,
+        coverImage: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791161571188',
+        title: '불편한 편의점',
+        author: '김호연',
+        publisher: '나무옆의자',
+        price: 14000,
+        coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791161571379',
+        title: '불편한 편의점 2',
+        author: '김호연',
+        publisher: '나무옆의자',
+        price: 14000,
+        coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791197407772',
+        title: '세이노의 가르침',
+        author: '세이노(SayNo)',
+        publisher: '데이원',
+        price: 7200,
+        coverImage: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788936434267',
+        title: '소년이 온다',
+        author: '한강',
+        publisher: '창비',
+        price: 15000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788936433598',
+        title: '채식주의자',
+        author: '한강',
+        publisher: '창비',
+        price: 15000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788954682152',
+        title: '작별하지 않는다',
+        author: '한강',
+        publisher: '문학동네',
+        price: 14000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791188331796',
+        title: '역행자',
+        author: '자청',
+        publisher: '웅진지식하우스',
+        price: 17500,
+        coverImage: 'https://images.unsplash.com/photo-1532012164546-f432f2e3edd4?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788937460005',
+        title: '데미안',
+        author: '헤르만 헤세',
+        publisher: '민음사',
+        price: 10000,
+        coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788932917245',
+        title: '어린 왕자',
+        author: '앙투안 드 생텍쥐페리',
+        publisher: '열린책들',
+        price: 10800,
+        coverImage: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788954620000',
+        title: '달과 6펜스',
+        author: '서머싯 몸',
+        publisher: '문학동네',
+        price: 12000,
+        coverImage: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791190313186',
+        title: '우리가 빛의 속도로 갈 수 없다면',
+        author: '김초엽',
+        publisher: '허블',
+        price: 14000,
+        coverImage: 'https://images.unsplash.com/photo-1532012164546-f432f2e3edd4?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791190030588',
+        title: '지구 끝의 온실',
+        author: '김초엽',
+        publisher: '자이언트북스',
+        price: 15000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788936438012',
+        title: '아몬드',
+        author: '손원평',
+        publisher: '창비',
+        price: 12000,
+        coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788998441012',
+        title: '모순',
+        author: '양귀자',
+        publisher: '쓰다',
+        price: 13000,
+        coverImage: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791191043297',
+        title: '물고기는 존재하지 않는다',
+        author: '룰루 밀러',
+        publisher: '곰출판',
+        price: 17000,
+        coverImage: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791167740985',
+        title: '마흔에 읽는 쇼펜하우어',
+        author: '강용수',
+        publisher: '유노북스',
+        price: 17000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788936438838',
+        title: '아버지의 해방일지',
+        author: '정지아',
+        publisher: '창비',
+        price: 15000,
+        coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791165343460',
+        title: '긴긴밤',
+        author: '루리',
+        publisher: '문학동네',
+        price: 11500,
+        coverImage: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788954687591',
+        title: '구의 증명',
+        author: '최진영',
+        publisher: '은행나무',
+        price: 9500,
+        coverImage: 'https://images.unsplash.com/photo-1532012164546-f432f2e3edd4?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791191043815',
+        title: '어서 오세요, 휴남동 서점입니다',
+        author: '황보름',
+        publisher: '클레이하우스',
+        price: 15000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788934986652',
+        title: '코스모스',
+        author: '칼 세이건',
+        publisher: '사이언스북스',
+        price: 19800,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788934972464',
+        title: '사피엔스 (유인원에서 사이보그까지)',
+        author: '유발 하라리',
+        publisher: '김영사',
+        price: 22000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791188331888',
+        title: '돈의 속성',
+        author: '김승호',
+        publisher: '스노우폭스북스',
+        price: 17800,
+        coverImage: 'https://images.unsplash.com/photo-1532012164546-f432f2e3edd4?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788901243658',
+        title: '아주 작은 습관의 힘 (Atomic Habits)',
+        author: '제임스 클리어',
+        publisher: '비즈니스북스',
+        price: 16000,
+        coverImage: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788901157697',
+        title: '원씽 (The ONE Thing)',
+        author: '게리 켈러, 제이 파파산',
+        publisher: '비즈니스북스',
+        price: 14000,
+        coverImage: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788950986704',
+        title: '총, 균, 쇠',
+        author: '재레드 다이아몬드',
+        publisher: '문학사상',
+        price: 28000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788932473901',
+        title: '이기적 유전자',
+        author: '리처드 도킨스',
+        publisher: '을유문화사',
+        price: 20000,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9791168340770',
+        title: '도둑맞은 집중력',
+        author: '요한 하리',
+        publisher: '어크로스',
+        price: 18800,
+        coverImage: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788996991342',
+        title: '미움받을 용기',
+        author: '기시미 이치로, 고가 후미타케',
+        publisher: '인플루엔셜',
+        price: 14900,
+        coverImage: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=600',
+      },
+      {
+        isbn: '9788966260959',
+        title: '클린 코드 (Clean Code)',
+        author: '로버트 C. 마틴',
+        publisher: '인사이트',
+        price: 33000,
+        coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600',
+      },
+    ];
+
+    for (const p of presetCatalog) {
+      if (
+        p.title.toLowerCase().includes(q) ||
+        p.author.toLowerCase().includes(q) ||
+        p.publisher.toLowerCase().includes(q) ||
+        p.isbn.includes(q)
+      ) {
+        const key = `${p.title.trim().toLowerCase()}|${p.author.trim().toLowerCase()}`;
+        if (!seenTitles.has(key)) {
+          seenTitles.add(key);
+          results.push({
+            isbn: p.isbn,
+            title: p.title,
+            author: p.author,
+            publisher: p.publisher,
+            price: p.price,
+            coverImage: p.coverImage,
+            inStock: false,
+            quantity: 0,
+            source: '도서 DB',
+          });
+        }
+      }
+    }
+
+    // 4. Online Google Books Direct Search (Fallback when results are few)
+    if (results.length < 4 && q.length >= 2) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const searchUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8&hl=ko`;
+        const res = await fetch(searchUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data?.items)) {
+            for (const item of data.items) {
+              const vi = item.volumeInfo || {};
+              const title = vi.title || '';
+              if (!title) continue;
+
+              const author = Array.isArray(vi.authors)
+                ? vi.authors.join(', ')
+                : vi.authors || '저자 미상';
+              const publisher = vi.publisher || '출판사 미상';
+
+              let coverImg =
+                vi.imageLinks?.thumbnail ||
+                vi.imageLinks?.smallThumbnail ||
+                undefined;
+              if (coverImg && coverImg.startsWith('http://')) {
+                coverImg = coverImg.replace('http://', 'https://');
+              }
+
+              // Extract ISBN if available
+              let isbn = '';
+              if (Array.isArray(vi.industryIdentifiers)) {
+                const isbn13Obj = vi.industryIdentifiers.find(
+                  (id: { type?: string; identifier?: string }) => id.type === 'ISBN_13'
+                );
+                isbn = isbn13Obj?.identifier || vi.industryIdentifiers[0]?.identifier || '';
+              }
+
+              const key = `${title.trim().toLowerCase()}|${author.trim().toLowerCase()}`;
+              if (!seenTitles.has(key)) {
+                seenTitles.add(key);
+                results.push({
+                  isbn,
+                  title,
+                  author,
+                  publisher,
+                  price: 15000,
+                  coverImage: coverImg,
+                  inStock: false,
+                  quantity: 0,
+                  source: '도서 DB',
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore Google Books timeout / network error
+      }
+    }
+
+    return results.slice(0, 10);
   }
 }
 

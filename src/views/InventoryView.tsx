@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { BookWithStock, InventoryFilter, InventorySort } from '../types';
+import React, { useState, useEffect } from 'react';
+import { BookWithStock, InventoryFilter, InventorySort, CustomerOrder, CustomerOrderStatus } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
 import { EditBookModal } from '../components/modals/EditBookModal';
+import { CustomerOrderModal } from '../components/modals/CustomerOrderModal';
 import {
   Search,
   Plus,
@@ -17,7 +18,17 @@ import {
   Trash2,
   AlertTriangle,
   X,
-  FileEdit
+  FileEdit,
+  ClipboardList,
+  Library,
+  Clock,
+  Package,
+  CheckCircle2,
+  User,
+  Phone,
+  Edit2,
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -29,6 +40,9 @@ interface InventoryViewProps {
   onShowToast: (message: string) => void;
 }
 
+type MainTabType = 'books' | 'orders';
+type OrderFilterType = 'all' | 'pending' | '주문접수' | '입고완료' | '수령대기' | '수령완료' | '취소됨';
+
 export const InventoryView: React.FC<InventoryViewProps> = ({
   onSelectBook,
   onOpenAddBook,
@@ -36,6 +50,10 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   searchQuery = '',
   onShowToast,
 }) => {
+  const [, setTick] = useState(0);
+  const [activeTab, setActiveTab] = useState<MainTabType>('books');
+
+  // Inventory state
   const [filter, setFilter] = useState<InventoryFilter>(initialFilter);
   const [sort, setSort] = useState<InventorySort>('updated');
   const [search, setSearch] = useState<string>(searchQuery);
@@ -43,10 +61,26 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [bookToDelete, setBookToDelete] = useState<BookWithStock | null>(null);
   const [bookToEdit, setBookToEdit] = useState<BookWithStock | null>(null);
 
+  // Customer Orders state
+  const [orderFilter, setOrderFilter] = useState<OrderFilterType>('pending');
+  const [orderSearch, setOrderSearch] = useState<string>('');
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<CustomerOrder | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<CustomerOrder | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = inventoryStore.subscribe(() => {
+      setTick((t) => t + 1);
+    });
+    return unsubscribe;
+  }, []);
+
   const settings = inventoryStore.getSettings();
   const allBooks = inventoryStore.getBooksWithStock();
+  const allOrders = inventoryStore.getCustomerOrders();
+  const orderStats = inventoryStore.getCustomerOrderStats();
 
-  // Filter logic
+  // Books Filter logic
   const filteredBooks = allBooks.filter((book) => {
     // Search query
     if (search.trim()) {
@@ -73,7 +107,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     return true;
   });
 
-  // Sort logic
+  // Books Sort logic
   const sortedBooks = [...filteredBooks].sort((a, b) => {
     if (sort === 'stock_asc') return a.quantity - b.quantity;
     if (sort === 'stock_desc') return b.quantity - a.quantity;
@@ -81,6 +115,30 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     if (sort === 'price_desc') return b.price - a.price;
     // Default: 'updated'
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+
+  // Orders Filter logic
+  const filteredOrders = allOrders.filter((order) => {
+    if (orderSearch.trim()) {
+      const q = orderSearch.toLowerCase().trim();
+      const matchBook = order.bookTitle.toLowerCase().includes(q);
+      const matchAuthor = (order.bookAuthor || '').toLowerCase().includes(q);
+      const matchPub = (order.bookPublisher || '').toLowerCase().includes(q);
+      const matchCustomer = order.customerName.toLowerCase().includes(q);
+      const matchContact = (order.customerContact || '').toLowerCase().includes(q);
+      const matchNote = (order.note || '').toLowerCase().includes(q);
+      if (!matchBook && !matchAuthor && !matchPub && !matchCustomer && !matchContact && !matchNote) {
+        return false;
+      }
+    }
+
+    if (orderFilter === 'pending') {
+      return order.status === '주문접수' || order.status === '입고완료' || order.status === '수령대기';
+    }
+    if (orderFilter === 'all') {
+      return true;
+    }
+    return order.status === orderFilter;
   });
 
   const sortLabels: Record<InventorySort, string> = {
@@ -150,296 +208,735 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setBookToDelete(null);
   };
 
+  const handleQuickOrderStatusChange = (e: React.MouseEvent, order: CustomerOrder, nextStatus: CustomerOrderStatus) => {
+    e.stopPropagation();
+    inventoryStore.updateCustomerOrderStatus(order.id, nextStatus);
+    feedback.playBeep('success');
+    onShowToast(`'${order.customerName}'님의 주문 상태가 '${nextStatus}'(으)로 변경되었습니다.`);
+  };
+
+  const handleConfirmDeleteOrder = () => {
+    if (orderToDelete) {
+      inventoryStore.deleteCustomerOrder(orderToDelete.id);
+      feedback.playBeep('warning');
+      onShowToast(`'${orderToDelete.customerName}'님의 도서 주문 내역이 삭제되었습니다.`);
+      setOrderToDelete(null);
+    }
+  };
+
+  const getOrderStatusBadge = (status: CustomerOrderStatus) => {
+    switch (status) {
+      case '주문접수':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-[#fff8e1] text-[#b78103] border border-[#ffe082] px-2.5 py-0.5 rounded-full whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#b78103] animate-pulse" />
+            주문접수
+          </span>
+        );
+      case '입고완료':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-[#e8f5e9] text-[#2e7d32] border border-[#a5d6a7] px-2.5 py-0.5 rounded-full whitespace-nowrap">
+            <Package className="w-3 h-3" />
+            입고완료
+          </span>
+        );
+      case '수령대기':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-[#e3f2fd] text-[#1565c0] border border-[#90caf9] px-2.5 py-0.5 rounded-full whitespace-nowrap">
+            <Clock className="w-3 h-3" />
+            수령대기
+          </span>
+        );
+      case '수령완료':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-[#f0eee9] text-[#737878] border border-[#c3c7c7] px-2.5 py-0.5 rounded-full whitespace-nowrap">
+            <CheckCircle2 className="w-3 h-3 text-[#3c4c20]" />
+            수령완료
+          </span>
+        );
+      case '취소됨':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-[#ffdad6] text-[#ba1a1a] border border-[#ffb4ab] px-2.5 py-0.5 rounded-full whitespace-nowrap">
+            취소됨
+          </span>
+        );
+    }
+  };
+
+  const totalStockCount = allBooks.reduce((acc, b) => acc + b.quantity, 0);
+
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6 select-none pb-12">
+    <div className="w-full max-w-7xl mx-auto space-y-6 select-none pb-12 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
       {/* Header & Actions */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#171e1e] mb-1.5 tracking-tight">
-            재고 관리
+            재고 및 주문 관리
           </h1>
-          <p className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-sm md:text-base text-[#434848]">
-            카탈로그, 재고, 가격을 관리하세요.
+          <p className="text-sm md:text-base text-[#434848]">
+            서점 카탈로그 도서 재고와 손님 예약/주문 도서를 실시간으로 관리하세요.
           </p>
         </div>
 
-        {/* Action Button: Add Book */}
+        {/* Action Button depending on active tab */}
+        <div className="flex items-center gap-2">
+          {activeTab === 'books' ? (
+            <button
+              onClick={onOpenAddBook}
+              className="bg-[#171e1e] text-white text-xs md:text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>도서 등록</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setEditingOrder(null);
+                setIsOrderModalOpen(true);
+              }}
+              className="bg-[#171e1e] text-white text-xs md:text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>손님 주문 접수</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Top Navigation Tabs: [ 📚 도서 재고 ] vs [ 📦 주문건 ] */}
+      <div className="flex items-center gap-2 border-b border-[#c3c7c7]/60 pb-1">
         <button
-          onClick={onOpenAddBook}
-          className="self-start md:self-auto bg-[#171e1e] text-white font-['Public_Sans','Noto_Sans_KR',sans-serif] text-xs md:text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
+          onClick={() => setActiveTab('books')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+            activeTab === 'books'
+              ? 'bg-[#171e1e] text-white shadow-xs'
+              : 'text-[#434848] hover:text-[#171e1e] hover:bg-[#f0eee9]'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          <span>도서 등록</span>
+          <Library className="w-4 h-4" />
+          <span>도서 재고</span>
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full ${
+              activeTab === 'books' ? 'bg-white/20 text-white' : 'bg-[#e4e2dd] text-[#434848]'
+            }`}
+          >
+            {totalStockCount}권
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('orders')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer relative ${
+            activeTab === 'orders'
+              ? 'bg-[#171e1e] text-white shadow-xs'
+              : 'text-[#434848] hover:text-[#171e1e] hover:bg-[#f0eee9]'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          <span>주문건</span>
+          {orderStats.pending > 0 ? (
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                activeTab === 'orders' ? 'bg-[#ffdad6] text-[#93000a]' : 'bg-[#171e1e] text-white'
+              }`}
+            >
+              대기 {orderStats.pending}건
+            </span>
+          ) : (
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full ${
+                activeTab === 'orders' ? 'bg-white/20 text-white' : 'bg-[#e4e2dd] text-[#434848]'
+              }`}
+            >
+              {allOrders.length}건
+            </span>
+          )}
         </button>
       </div>
 
-      {/* Filter and Sort Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
-        {/* Filter Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {[
-            { id: 'all', label: '전체' },
-            { id: 'in_stock', label: '재고 있음' },
-            { id: 'low_stock', label: '재고 부족' },
-            { id: 'out_of_stock', label: '품절' },
-          ].map((item) => {
-            const isSelected = filter === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setFilter(item.id as InventoryFilter)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-[#171e1e] text-white shadow-xs'
-                    : 'bg-[#ffffff] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3]'
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Search & Sort on right */}
-        <div className="flex items-center gap-2">
-          {/* Mobile Search input */}
-          <div className="relative flex-1 sm:w-60">
-            <Search className="w-3.5 h-3.5 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="도서명, 저자, ISBN..."
-              className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs placeholder-[#737878] focus:border-[#171e1e] outline-none"
-            />
-          </div>
-
-          {/* Sort Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowSortDropdown(!showSortDropdown)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs font-semibold text-[#171e1e] hover:bg-[#f0eee9] transition-colors cursor-pointer"
-            >
-              <span className="text-[#737878]">정렬</span>
-              <span>{sortLabels[sort]}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#737878]" />
-            </button>
-
-            {showSortDropdown && (
-              <div className="absolute right-0 mt-1.5 w-36 bg-white border border-[#c3c7c7] rounded-xl shadow-lg z-30 py-1 font-['Public_Sans','Noto_Sans_KR',sans-serif] text-xs">
-                {(Object.keys(sortLabels) as InventorySort[]).map((s) => (
+      {/* ========================================================================= */}
+      {/* TAB 1: 📚 도서 재고 목록 (BOOKS INVENTORY) */}
+      {/* ========================================================================= */}
+      {activeTab === 'books' && (
+        <div className="space-y-6">
+          {/* Filter and Sort Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
+            {/* Filter Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              {[
+                { id: 'all', label: '전체' },
+                { id: 'in_stock', label: '재고 있음' },
+                { id: 'low_stock', label: '재고 부족' },
+                { id: 'out_of_stock', label: '품절' },
+              ].map((item) => {
+                const isSelected = filter === item.id;
+                return (
                   <button
-                    key={s}
-                    onClick={() => {
-                      setSort(s);
-                      setShowSortDropdown(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 hover:bg-[#f5f3ee] transition-colors ${
-                      sort === s ? 'font-bold text-[#171e1e] bg-[#f0eee9]' : 'text-[#434848]'
+                    key={item.id}
+                    onClick={() => setFilter(item.id as InventoryFilter)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#171e1e] text-white shadow-xs'
+                        : 'bg-[#ffffff] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3]'
                     }`}
                   >
-                    {sortLabels[s]}
+                    {item.label}
                   </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+                );
+              })}
+            </div>
 
-      {/* DESKTOP TABLE VIEW (Matching Stitch Image 7) */}
-      <div className="hidden md:block bg-[#ffffff] rounded-2xl border border-[#c3c7c7] overflow-hidden shadow-xs">
-        <table className="w-full text-left border-collapse font-['Public_Sans','Noto_Sans_KR',sans-serif]">
-          <thead>
-            <tr className="bg-[#f5f3ee] border-b border-[#c3c7c7] text-xs font-bold uppercase tracking-wider text-[#434848]">
-              <th className="py-3.5 px-5 w-16">표지</th>
-              <th className="py-3.5 px-5">도서명 및 저자</th>
-              <th className="py-3.5 px-5">ISBN / 출판사</th>
-              <th className="py-3.5 px-5">현재 재고</th>
-              <th className="py-3.5 px-5 text-right">판매가</th>
-              <th className="py-3.5 px-5 text-right">최근 수정일</th>
-              <th className="py-3.5 px-5 text-center w-28">빠른 변동 / 관리</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#e4e2dd] text-sm">
+            {/* Search & Sort on right */}
+            <div className="flex items-center gap-2">
+              {/* Search input */}
+              <div className="relative flex-1 sm:w-60">
+                <Search className="w-3.5 h-3.5 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="도서명, 저자, ISBN..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs placeholder-[#737878] focus:border-[#171e1e] outline-none"
+                />
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSortDropdown(!showSortDropdown)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs font-semibold text-[#171e1e] hover:bg-[#f0eee9] transition-colors cursor-pointer"
+                >
+                  <span className="text-[#737878]">정렬</span>
+                  <span>{sortLabels[sort]}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#737878]" />
+                </button>
+
+                {showSortDropdown && (
+                  <div className="absolute right-0 mt-1.5 w-36 bg-white border border-[#c3c7c7] rounded-xl shadow-lg z-30 py-1 text-xs">
+                    {(Object.keys(sortLabels) as InventorySort[]).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => {
+                          setSort(s);
+                          setShowSortDropdown(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 hover:bg-[#f5f3ee] transition-colors cursor-pointer ${
+                          sort === s ? 'font-bold text-[#171e1e] bg-[#f0eee9]' : 'text-[#434848]'
+                        }`}
+                      >
+                        {sortLabels[s]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* DESKTOP TABLE VIEW */}
+          <div className="hidden md:block bg-[#ffffff] rounded-2xl border border-[#c3c7c7] overflow-hidden shadow-xs">
+            <table className="w-full text-left border-collapse font-['Public_Sans','Noto_Sans_KR',sans-serif]">
+              <thead>
+                <tr className="bg-[#f5f3ee] border-b border-[#c3c7c7] text-xs font-bold uppercase tracking-wider text-[#434848]">
+                  <th className="py-3.5 px-5 w-16">표지</th>
+                  <th className="py-3.5 px-5">도서명 및 저자</th>
+                  <th className="py-3.5 px-5">ISBN / 출판사</th>
+                  <th className="py-3.5 px-5">현재 재고</th>
+                  <th className="py-3.5 px-5 text-right">판매가</th>
+                  <th className="py-3.5 px-5 text-right">최근 수정일</th>
+                  <th className="py-3.5 px-5 text-center w-28">빠른 변동 / 관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e4e2dd] text-sm">
+                {sortedBooks.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-[#737878]">
+                      일치하는 도서가 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  sortedBooks.map((book) => (
+                    <tr
+                      key={book.id}
+                      onClick={() => onSelectBook(book.id)}
+                      className="hover:bg-[#f5f3ee] transition-colors cursor-pointer group"
+                    >
+                      {/* Cover */}
+                      <td className="py-3.5 px-5 align-middle">
+                        <BookCover src={book.coverImage} alt={book.title} size="sm" />
+                      </td>
+
+                      {/* Title & Author */}
+                      <td className="py-3.5 px-5 align-middle">
+                        <div className="font-bold text-[#171e1e] group-hover:underline">
+                          {book.title}
+                        </div>
+                        <div className="text-xs text-[#737878] mt-0.5">{book.author}</div>
+                      </td>
+
+                      {/* ISBN / Publisher */}
+                      <td className="py-3.5 px-5 align-middle">
+                        <div className="font-mono text-xs text-[#171e1e]">{book.isbn}</div>
+                        <div className="text-xs text-[#737878] mt-0.5">{book.publisher}</div>
+                      </td>
+
+                      {/* Stock & Badge */}
+                      <td className="py-3.5 px-5 align-middle">
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-mono font-bold text-base w-6 text-[#171e1e]">
+                            {book.quantity}
+                          </span>
+                          <StockBadge quantity={book.quantity} />
+                        </div>
+                      </td>
+
+                      {/* Price */}
+                      <td className="py-3.5 px-5 align-middle text-right font-mono font-semibold text-[#171e1e]">
+                        ₩{book.price.toLocaleString('ko-KR')}
+                      </td>
+
+                      {/* Date */}
+                      <td className="py-3.5 px-5 align-middle text-right text-xs text-[#737878] font-mono">
+                        {formatDate(book.updatedAt)}
+                      </td>
+
+                      {/* Quick delta buttons, Edit & Delete Button */}
+                      <td className="py-3.5 px-5 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            title="1권 판매"
+                            onClick={(e) => handleQuickMinus(e, book)}
+                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] transition-colors cursor-pointer"
+                          >
+                            <MinusCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            title="1권 입고"
+                            onClick={(e) => handleQuickAdd(e, book)}
+                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#d6eaaf] text-[#3c4c20] transition-colors cursor-pointer"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            title="도서 정보 및 표지 수정"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBookToEdit(book);
+                            }}
+                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] transition-colors cursor-pointer"
+                          >
+                            <FileEdit className="w-4 h-4" />
+                          </button>
+                          <button
+                            title="도서 삭제"
+                            onClick={(e) => handleOpenDeleteConfirm(e, book)}
+                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] opacity-70 hover:opacity-100 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* MOBILE CARD LIST VIEW */}
+          <div className="md:hidden space-y-3">
             {sortedBooks.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="py-12 text-center text-[#737878]">
-                  일치하는 도서가 없습니다.
-                </td>
-              </tr>
+              <div className="py-12 text-center text-[#737878] text-sm bg-white rounded-2xl border border-[#c3c7c7]">
+                일치하는 도서가 없습니다.
+              </div>
             ) : (
               sortedBooks.map((book) => (
-                <tr
+                <div
                   key={book.id}
                   onClick={() => onSelectBook(book.id)}
-                  className="hover:bg-[#f5f3ee] transition-colors cursor-pointer group"
+                  className="bg-white rounded-2xl p-4 border border-[#e9e2d1] hover:border-[#171e1e] transition-all shadow-xs flex flex-col gap-3 cursor-pointer"
                 >
-                  {/* Cover */}
-                  <td className="py-3.5 px-5 align-middle">
-                    <BookCover src={book.coverImage} alt={book.title} size="sm" />
-                  </td>
-
-                  {/* Title & Author */}
-                  <td className="py-3.5 px-5 align-middle">
-                    <div className="font-bold text-[#171e1e] group-hover:underline">
-                      {book.title}
+                  <div className="flex items-start gap-3.5">
+                    <BookCover src={book.coverImage} alt={book.title} size="md" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-bold text-[#171e1e] text-sm line-clamp-1">
+                          {book.title}
+                        </h3>
+                        <StockBadge quantity={book.quantity} />
+                      </div>
+                      <p className="text-xs text-[#737878] mt-0.5">{book.author} · {book.publisher}</p>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#f0eee9]">
+                        <span className="font-mono text-xs text-[#737878]">
+                          재고 <strong className="text-sm text-[#171e1e]">{book.quantity}권</strong>
+                        </span>
+                        <span className="font-mono font-bold text-sm text-[#171e1e]">
+                          ₩{book.price.toLocaleString('ko-KR')}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-xs text-[#737878] mt-0.5">{book.author}</div>
-                  </td>
+                  </div>
 
-                  {/* ISBN / Publisher */}
-                  <td className="py-3.5 px-5 align-middle">
-                    <div className="font-mono text-xs text-[#171e1e]">{book.isbn}</div>
-                    <div className="text-xs text-[#737878] mt-0.5">{book.publisher}</div>
-                  </td>
-
-                  {/* Stock & Badge */}
-                  <td className="py-3.5 px-5 align-middle">
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-mono font-bold text-base w-6 text-[#171e1e]">
-                        {book.quantity}
-                      </span>
-                      <StockBadge quantity={book.quantity} />
-                    </div>
-                  </td>
-
-                  {/* Price */}
-                  <td className="py-3.5 px-5 align-middle text-right font-mono font-semibold text-[#171e1e]">
-                    ₩{book.price.toLocaleString('ko-KR')}
-                  </td>
-
-                  {/* Date */}
-                  <td className="py-3.5 px-5 align-middle text-right text-xs text-[#737878] font-mono">
-                    {formatDate(book.updatedAt)}
-                  </td>
-
-                  {/* Quick delta buttons, Edit & Delete Button */}
-                  <td className="py-3.5 px-5 align-middle text-center" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-center gap-1.5">
+                  {/* Mobile Quick +/- Bar & Delete Button */}
+                  <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9]" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[11px] text-[#737878] font-mono">
+                      ISBN {book.isbn}
+                    </span>
+                    <div className="flex items-center gap-1.5">
                       <button
-                        title="1권 판매"
                         onClick={(e) => handleQuickMinus(e, book)}
-                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] transition-colors cursor-pointer"
+                        className="px-2.5 py-1 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                       >
-                        <MinusCircle className="w-4 h-4" />
+                        -1 판매
                       </button>
                       <button
-                        title="1권 입고"
                         onClick={(e) => handleQuickAdd(e, book)}
-                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#d6eaaf] text-[#3c4c20] transition-colors cursor-pointer"
+                        className="px-2.5 py-1 bg-[#f5f3ee] text-[#3c4c20] hover:bg-[#d6eaaf] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                       >
-                        <PlusCircle className="w-4 h-4" />
+                        +1 입고
                       </button>
                       <button
-                        title="도서 정보 및 표지 수정"
                         onClick={(e) => {
                           e.stopPropagation();
                           setBookToEdit(book);
                         }}
-                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] transition-colors cursor-pointer"
+                        title="도서 정보 및 표지 수정"
+                        className="p-1.5 bg-[#f5f3ee] text-[#171e1e] hover:bg-[#eae8e3] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
                       >
-                        <FileEdit className="w-4 h-4" />
+                        <FileEdit className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        title="도서 삭제"
                         onClick={(e) => handleOpenDeleteConfirm(e, book)}
-                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] opacity-70 hover:opacity-100 transition-all cursor-pointer"
+                        title="도서 삭제"
+                        className="p-1.5 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* MOBILE CARD LIST VIEW */}
-      <div className="md:hidden space-y-3">
-        {sortedBooks.length === 0 ? (
-          <div className="py-12 text-center text-[#737878] text-sm bg-white rounded-2xl border border-[#c3c7c7]">
-            일치하는 도서가 없습니다.
           </div>
-        ) : (
-          sortedBooks.map((book) => (
-            <div
-              key={book.id}
-              onClick={() => onSelectBook(book.id)}
-              className="bg-white rounded-2xl p-4 border border-[#e9e2d1] hover:border-[#171e1e] transition-all shadow-xs flex flex-col gap-3 cursor-pointer"
-            >
-              <div className="flex items-start gap-3.5">
-                <BookCover src={book.coverImage} alt={book.title} size="md" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-bold text-[#171e1e] text-sm line-clamp-1">
-                      {book.title}
-                    </h3>
-                    <StockBadge quantity={book.quantity} />
-                  </div>
-                  <p className="text-xs text-[#737878] mt-0.5">{book.author} · {book.publisher}</p>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#f0eee9]">
-                    <span className="font-mono text-xs text-[#737878]">
-                      재고 <strong className="text-sm text-[#171e1e]">{book.quantity}권</strong>
-                    </span>
-                    <span className="font-mono font-bold text-sm text-[#171e1e]">
-                      ₩{book.price.toLocaleString('ko-KR')}
-                    </span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Mobile Quick +/- Bar & Delete Button */}
-              <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9]" onClick={(e) => e.stopPropagation()}>
-                <span className="text-[11px] text-[#737878] font-mono">
-                  ISBN {book.isbn}
-                </span>
-                <div className="flex items-center gap-1.5">
+          {/* Pagination Footer */}
+          <div className="flex items-center justify-between text-xs text-[#737878] pt-2 px-2">
+            <span>총 {sortedBooks.length}종의 도서 표시 중</span>
+            <span>독립서점 재고관리 시스템</span>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: 📦 손님 주문받은 책 (CUSTOMER ORDERS VIEW) */}
+      {/* ========================================================================= */}
+      {activeTab === 'orders' && (
+        <div className="space-y-6">
+          {/* Order Filter and Search Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
+            {/* Filter Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              {[
+                { id: 'pending', label: `진행 중 (${orderStats.pending})` },
+                { id: 'all', label: `전체 (${orderStats.total})` },
+                { id: '주문접수', label: '📝 주문접수' },
+                { id: '입고완료', label: '📦 입고완료' },
+                { id: '수령대기', label: '🔔 수령대기' },
+                { id: '수령완료', label: '✨ 수령완료' },
+                { id: '취소됨', label: '❌ 취소됨' },
+              ].map((item) => {
+                const isSelected = orderFilter === item.id;
+                return (
                   <button
-                    onClick={(e) => handleQuickMinus(e, book)}
-                    className="px-2.5 py-1 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    key={item.id}
+                    onClick={() => setOrderFilter(item.id as OrderFilterType)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#171e1e] text-white shadow-xs'
+                        : 'bg-[#ffffff] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3]'
+                    }`}
                   >
-                    -1 판매
+                    {item.label}
                   </button>
-                  <button
-                    onClick={(e) => handleQuickAdd(e, book)}
-                    className="px-2.5 py-1 bg-[#f5f3ee] text-[#3c4c20] hover:bg-[#d6eaaf] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    +1 입고
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setBookToEdit(book);
-                    }}
-                    title="도서 정보 및 표지 수정"
-                    className="p-1.5 bg-[#f5f3ee] text-[#171e1e] hover:bg-[#eae8e3] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
-                  >
-                    <FileEdit className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => handleOpenDeleteConfirm(e, book)}
-                    title="도서 삭제"
-                    className="p-1.5 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
+                );
+              })}
             </div>
-          ))
-        )}
-      </div>
 
-      {/* Pagination Footer */}
-      <div className="flex items-center justify-between text-xs text-[#737878] pt-2 px-2 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
-        <span>총 {sortedBooks.length}권의 도서 표시 중</span>
-        <span>독립서점 재고관리 시스템</span>
-      </div>
+            {/* Order Search input */}
+            <div className="relative sm:w-64">
+              <Search className="w-3.5 h-3.5 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                placeholder="도서명, 손님명, 연락처..."
+                className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs placeholder-[#737878] focus:border-[#171e1e] outline-none"
+              />
+            </div>
+          </div>
 
-      {/* DELETE CONFIRMATION MODAL */}
+          {/* Desktop Table View for Orders */}
+          <div className="hidden md:block bg-[#ffffff] rounded-2xl border border-[#c3c7c7] overflow-hidden shadow-xs">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#f5f3ee] border-b border-[#c3c7c7] text-xs font-bold uppercase tracking-wider text-[#434848]">
+                  <th className="py-3.5 px-5">상태</th>
+                  <th className="py-3.5 px-5">주문 도서 정보</th>
+                  <th className="py-3.5 px-5">주문 손님 / 연락처</th>
+                  <th className="py-3.5 px-5 text-center">수량 / 금액</th>
+                  <th className="py-3.5 px-5">주문일 / 특이사항</th>
+                  <th className="py-3.5 px-5 text-center w-40">진행 상태 변경 / 관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e4e2dd] text-sm">
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-[#737878]">
+                      일치하는 손님 주문 도서가 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredOrders.map((order) => (
+                    <tr key={order.id} className="hover:bg-[#f5f3ee] transition-colors group">
+                      {/* Status */}
+                      <td className="py-3.5 px-5 align-middle">
+                        {getOrderStatusBadge(order.status)}
+                      </td>
+
+                      {/* Book Title & Author */}
+                      <td className="py-3.5 px-5 align-middle">
+                        <div className="font-bold text-[#171e1e] font-['Playfair_Display','Noto_Serif_KR',serif] text-base">
+                          {order.bookTitle}
+                        </div>
+                        <div className="text-xs text-[#737878] mt-0.5">
+                          {order.bookAuthor ? `${order.bookAuthor} 저` : ''}
+                          {order.bookPublisher ? ` · ${order.bookPublisher}` : ''}
+                        </div>
+                      </td>
+
+                      {/* Customer Name & Contact */}
+                      <td className="py-3.5 px-5 align-middle">
+                        <div className="flex items-center gap-1.5 font-bold text-[#171e1e]">
+                          <User className="w-3.5 h-3.5 text-[#737878]" />
+                          <span>{order.customerName} 손님</span>
+                        </div>
+                        {order.customerContact ? (
+                          <div className="text-xs text-[#737878] flex items-center gap-1 font-mono mt-0.5">
+                            <Phone className="w-3 h-3" />
+                            {order.customerContact}
+                          </div>
+                        ) : null}
+                      </td>
+
+                      {/* Quantity & Price */}
+                      <td className="py-3.5 px-5 align-middle text-center">
+                        <div className="font-bold text-[#171e1e]">{order.quantity}권</div>
+                        <div className="text-xs font-mono text-[#737878]">
+                          {order.orderPrice ? `₩${order.orderPrice.toLocaleString()}` : '-'}
+                        </div>
+                        <div className="mt-0.5">
+                          {order.depositPaid ? (
+                            <span className="text-[10px] font-bold text-[#2e7d32] bg-[#e8f5e9] px-1.5 py-0.5 rounded">
+                              선결제 완료
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-[#e65100] bg-[#fff3e0] px-1.5 py-0.5 rounded">
+                              수령 시 결제
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Date & Note */}
+                      <td className="py-3.5 px-5 align-middle">
+                        <div className="text-xs font-mono text-[#737878]">{order.orderDate}</div>
+                        {order.note ? (
+                          <div className="text-xs text-[#434848] mt-1 bg-[#f0eee9] px-2 py-1 rounded-lg max-w-xs truncate" title={order.note}>
+                            메모: {order.note}
+                          </div>
+                        ) : null}
+                      </td>
+
+                      {/* Quick Status Action & Edit/Delete */}
+                      <td className="py-3.5 px-5 align-middle text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {/* Next Stage Button */}
+                          {order.status === '주문접수' && (
+                            <button
+                              onClick={(e) => handleQuickOrderStatusChange(e, order, '입고완료')}
+                              className="px-2 py-1 bg-[#e8f5e9] border border-[#a5d6a7] text-[#2e7d32] rounded-lg text-xs font-bold hover:bg-[#c8e6c9] cursor-pointer"
+                            >
+                              📦 입고완료
+                            </button>
+                          )}
+                          {order.status === '입고완료' && (
+                            <button
+                              onClick={(e) => handleQuickOrderStatusChange(e, order, '수령대기')}
+                              className="px-2 py-1 bg-[#e3f2fd] border border-[#90caf9] text-[#1565c0] rounded-lg text-xs font-bold hover:bg-[#bbdefb] cursor-pointer"
+                            >
+                              🔔 수령대기
+                            </button>
+                          )}
+                          {order.status === '수령대기' && (
+                            <button
+                              onClick={(e) => handleQuickOrderStatusChange(e, order, '수령완료')}
+                              className="px-2 py-1 bg-[#171e1e] text-white rounded-lg text-xs font-bold hover:bg-[#2c3333] cursor-pointer flex items-center gap-0.5"
+                            >
+                              <Check className="w-3 h-3" />
+                              수령완료
+                            </button>
+                          )}
+                          {order.status === '수령완료' && (
+                            <span className="text-xs text-[#737878] font-medium px-2 py-1">완료됨</span>
+                          )}
+
+                          {/* Edit / Delete */}
+                          <button
+                            onClick={() => {
+                              setEditingOrder(order);
+                              setIsOrderModalOpen(true);
+                            }}
+                            title="주문 정보 수정"
+                            className="p-1.5 text-[#737878] hover:text-[#171e1e] hover:bg-[#eae8e3] rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setOrderToDelete(order)}
+                            title="주문 삭제"
+                            className="p-1.5 text-[#737878] hover:text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card List View for Orders */}
+          <div className="md:hidden space-y-3">
+            {filteredOrders.length === 0 ? (
+              <div className="py-12 text-center text-[#737878] text-sm bg-white rounded-2xl border border-[#c3c7c7]">
+                일치하는 손님 주문 도서가 없습니다.
+              </div>
+            ) : (
+              filteredOrders.map((order) => (
+                <div
+                  key={order.id}
+                  className="bg-white rounded-2xl p-4 border border-[#c3c7c7] shadow-xs space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {getOrderStatusBadge(order.status)}
+                      <span className="text-[11px] text-[#737878] font-mono">{order.orderDate}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setEditingOrder(order);
+                          setIsOrderModalOpen(true);
+                        }}
+                        className="p-1 text-[#737878] hover:text-[#171e1e] rounded-lg cursor-pointer"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setOrderToDelete(order)}
+                        className="p-1 text-[#737878] hover:text-[#ba1a1a] rounded-lg cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-base font-bold text-[#171e1e]">
+                      {order.bookTitle}
+                    </h3>
+                    <p className="text-xs text-[#737878] mt-0.5">
+                      {order.bookAuthor ? `${order.bookAuthor} · ` : ''}
+                      {order.bookPublisher || ''}
+                      <span className="ml-2 font-bold text-[#171e1e]">({order.quantity}권)</span>
+                    </p>
+                  </div>
+
+                  <div className="bg-[#fbf9f4] p-2.5 rounded-xl text-xs space-y-1 border border-[#f0eee9]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#171e1e] flex items-center gap-1">
+                        <User className="w-3.5 h-3.5 text-[#737878]" /> {order.customerName} 손님
+                      </span>
+                      <span className="font-mono text-[#737878]">{order.customerContact}</span>
+                    </div>
+                    {order.note && (
+                      <p className="text-[11px] text-[#434848] pt-1 border-t border-[#e4e2dd]">
+                        <span className="font-semibold text-[#737878]">메모: </span>{order.note}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9]">
+                    <div>
+                      {order.depositPaid ? (
+                        <span className="text-[11px] font-bold text-[#2e7d32] bg-[#e8f5e9] px-2 py-0.5 rounded-md">
+                          선결제 완료
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-[#e65100] bg-[#fff3e0] px-2 py-0.5 rounded-md">
+                          수령 시 결제
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {order.status !== '입고완료' && order.status !== '수령완료' && (
+                        <button
+                          onClick={(e) => handleQuickOrderStatusChange(e, order, '입고완료')}
+                          className="px-2.5 py-1 bg-[#e8f5e9] border border-[#a5d6a7] text-[#2e7d32] rounded-lg text-xs font-bold"
+                        >
+                          📦 입고완료
+                        </button>
+                      )}
+                      {order.status !== '수령대기' && order.status !== '수령완료' && (
+                        <button
+                          onClick={(e) => handleQuickOrderStatusChange(e, order, '수령대기')}
+                          className="px-2.5 py-1 bg-[#e3f2fd] border border-[#90caf9] text-[#1565c0] rounded-lg text-xs font-bold"
+                        >
+                          🔔 수령대기
+                        </button>
+                      )}
+                      {order.status !== '수령완료' && (
+                        <button
+                          onClick={(e) => handleQuickOrderStatusChange(e, order, '수령완료')}
+                          className="px-2.5 py-1 bg-[#171e1e] text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                        >
+                          <Check className="w-3 h-3" />
+                          수령완료
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Orders Count Footer */}
+          <div className="flex items-center justify-between text-xs text-[#737878] pt-2 px-2">
+            <span>총 {filteredOrders.length}건의 주문 내역 표시 중</span>
+            <span>독립서점 주문 및 예약 관리</span>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODALS */}
+      {/* ========================================================================= */}
+
+      {/* DELETE BOOK CONFIRMATION MODAL */}
       {bookToDelete && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in"
@@ -504,6 +1001,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           </div>
         </div>
       )}
+
       {/* EDIT BOOK MODAL */}
       {bookToEdit && (
         <EditBookModal
@@ -515,6 +1013,58 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           }}
         />
       )}
+
+      {/* CUSTOMER ORDER CREATE/EDIT MODAL */}
+      {isOrderModalOpen && (
+        <CustomerOrderModal
+          order={editingOrder}
+          onClose={() => {
+            setIsOrderModalOpen(false);
+            setEditingOrder(null);
+          }}
+          onSuccess={(msg) => {
+            onShowToast(msg);
+          }}
+        />
+      )}
+
+      {/* DELETE ORDER CONFIRMATION MODAL */}
+      {orderToDelete && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn"
+          onClick={() => setOrderToDelete(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-sm w-full p-6 border border-[#c3c7c7] shadow-xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-10 rounded-full bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center mx-auto">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div className="text-center space-y-1">
+              <h4 className="font-bold text-base text-[#171e1e]">주문 내역 삭제</h4>
+              <p className="text-xs text-[#434848]">
+                '{orderToDelete.customerName}'님의 '{orderToDelete.bookTitle}' 주문 내역을 삭제하시겠습니까?
+              </p>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setOrderToDelete(null)}
+                className="flex-1 py-2.5 border border-[#c3c7c7] rounded-xl text-xs font-semibold text-[#434848] hover:bg-[#f5f3ee] cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleConfirmDeleteOrder}
+                className="flex-1 py-2.5 bg-[#ba1a1a] text-white rounded-xl text-xs font-semibold hover:bg-[#93000a] cursor-pointer shadow-xs"
+              >
+                삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

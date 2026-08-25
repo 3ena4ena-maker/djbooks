@@ -7,6 +7,8 @@ import {
   DbBook,
   DbInventory,
   DbInventoryTransaction,
+  CustomerOrder,
+  CustomerOrderStatus,
 } from '../types';
 import { INITIAL_BOOKS, INITIAL_INVENTORY, INITIAL_LOGS } from '../data/mockData';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -16,7 +18,56 @@ const STORAGE_KEYS = {
   INVENTORY: 'folio_inventory_v3',
   LOGS: 'folio_logs_v3',
   SETTINGS: 'folio_settings_v3',
+  ORDERS: 'folio_customer_orders_v1',
 };
+
+const INITIAL_ORDERS: CustomerOrder[] = [
+  {
+    id: 'order-1',
+    bookTitle: '아무튼, 서점',
+    bookAuthor: '김윤아',
+    bookPublisher: '위고',
+    quantity: 1,
+    customerName: '김민주',
+    customerContact: '010-3849-1920',
+    depositPaid: true,
+    orderPrice: 12000,
+    status: '입고완료',
+    note: '입고 안내 문자 발송 완료 (목요일 오후 픽업 예정)',
+    orderDate: '2026.08.23',
+    createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: 'order-2',
+    bookTitle: '식물과 함께하는 오후',
+    bookAuthor: '이지원',
+    bookPublisher: '초록책방',
+    quantity: 2,
+    customerName: '이서연',
+    customerContact: '010-9281-4412',
+    depositPaid: false,
+    orderPrice: 32000,
+    status: '주문접수',
+    note: '선물용 포장 요청',
+    orderDate: '2026.08.24',
+    createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: 'order-3',
+    bookTitle: '빛과 물질에 관한 스펙트럼',
+    bookAuthor: '김초엽',
+    bookPublisher: '문학동네',
+    quantity: 1,
+    customerName: '박도현',
+    customerContact: '010-5123-8890',
+    depositPaid: true,
+    orderPrice: 15000,
+    status: '수령대기',
+    note: '서점 예약 보관함 2번에 보관 중',
+    orderDate: '2026.08.22',
+    createdAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+  },
+];
 
 export interface AppSettings {
   storeName: string;
@@ -87,6 +138,7 @@ class InventoryStore {
   private inventory: Record<string, number> = {};
   private locations: Record<string, string> = {};
   private logs: InventoryLog[] = [];
+  private orders: CustomerOrder[] = [];
   private settings: AppSettings = DEFAULT_SETTINGS;
   private listeners: Set<Listener> = new Set();
 
@@ -108,11 +160,13 @@ class InventoryStore {
       const storedBooks = localStorage.getItem(STORAGE_KEYS.BOOKS);
       const storedInventory = localStorage.getItem(STORAGE_KEYS.INVENTORY);
       const storedLogs = localStorage.getItem(STORAGE_KEYS.LOGS);
+      const storedOrders = localStorage.getItem(STORAGE_KEYS.ORDERS);
       const storedSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
 
       let parsedBooks: Book[] = storedBooks ? JSON.parse(storedBooks) : [...INITIAL_BOOKS];
       let parsedInventory: Record<string, number> = storedInventory ? JSON.parse(storedInventory) : { ...INITIAL_INVENTORY };
       let parsedLogs: InventoryLog[] = storedLogs ? JSON.parse(storedLogs) : [...INITIAL_LOGS];
+      let parsedOrders: CustomerOrder[] = storedOrders ? JSON.parse(storedOrders) : [...INITIAL_ORDERS];
 
       // Safety check: if local cache has non-UUID books from previous sessions (e.g. 'book-1'),
       // reset local cache to clean INITIAL_BOOKS with valid UUIDs
@@ -126,12 +180,14 @@ class InventoryStore {
       this.books = parsedBooks;
       this.inventory = parsedInventory;
       this.logs = parsedLogs;
+      this.orders = parsedOrders;
       this.settings = storedSettings ? JSON.parse(storedSettings) : { ...DEFAULT_SETTINGS };
     } catch (e) {
       console.warn('Failed to load local cache, fallback to initial state', e);
       this.books = [...INITIAL_BOOKS];
       this.inventory = { ...INITIAL_INVENTORY };
       this.logs = [...INITIAL_LOGS];
+      this.orders = [...INITIAL_ORDERS];
       this.settings = { ...DEFAULT_SETTINGS };
     }
   }
@@ -141,6 +197,7 @@ class InventoryStore {
       localStorage.setItem(STORAGE_KEYS.BOOKS, JSON.stringify(this.books));
       localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(this.inventory));
       localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(this.logs));
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(this.orders));
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(this.settings));
     } catch (e) {
       console.error('Failed to save to local cache', e);
@@ -511,29 +568,43 @@ class InventoryStore {
 
     const weeklyLogs = this.logs.filter((l) => new Date(l.createdAt) >= startOfWeek);
 
-    let weeklySales = 0;
+    let storeSales = 0;
     let weeklyRestock = 0;
 
     for (const log of weeklyLogs) {
       if (log.reason === '판매' || log.transactionType === 'OUT') {
-        weeklySales += Math.abs(log.changeQuantity);
+        storeSales += Math.abs(log.changeQuantity);
       } else if (log.reason === '입고' || log.transactionType === 'IN') {
         weeklyRestock += log.changeQuantity > 0 ? log.changeQuantity : 0;
       }
     }
 
-    if (weeklySales === 0 && weeklyRestock === 0) {
-      weeklySales = 12;
+    // Count customer orders completed/sold this week (수령완료)
+    const weeklyCompletedOrders = this.orders.filter((o) => {
+      if (o.status !== '수령완료') return false;
+      const compDate = o.completedAt ? new Date(o.completedAt) : new Date(o.createdAt);
+      return compDate >= startOfWeek;
+    });
+
+    const orderSales = weeklyCompletedOrders.reduce((sum, o) => sum + (Number(o.quantity) || 1), 0);
+
+    // Initial baseline if there is no activity yet
+    if (storeSales === 0 && weeklyRestock === 0 && orderSales === 0 && this.logs.length === 0) {
+      storeSales = 12;
       weeklyRestock = 24;
     }
+
+    const totalWeeklySales = storeSales + orderSales;
 
     return {
       totalStock: totalStock >= 1000 ? totalStock.toLocaleString('ko-KR') : totalStock,
       rawTotalStock: totalStock,
       lowStockCount,
-      weeklySales,
+      weeklySales: totalWeeklySales,
+      generalSales: storeSales,
+      orderSales,
       weeklyRestock,
-      todaySales: weeklySales,
+      todaySales: totalWeeklySales,
       todayRestock: weeklyRestock,
     };
   }
@@ -931,8 +1002,97 @@ class InventoryStore {
     this.books = [...INITIAL_BOOKS];
     this.inventory = { ...INITIAL_INVENTORY };
     this.logs = [...INITIAL_LOGS];
+    this.orders = [...INITIAL_ORDERS];
     this.settings = { ...DEFAULT_SETTINGS };
     this.saveToStorage();
+  }
+
+  // ==========================================
+  // 📦 손님 주문 / 예약 도서 (Customer Orders)
+  // ==========================================
+  public getCustomerOrders(): CustomerOrder[] {
+    return [...this.orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  public getCustomerOrderById(orderId: string): CustomerOrder | undefined {
+    return this.orders.find((o) => o.id === orderId);
+  }
+
+  public addCustomerOrder(orderData: Omit<CustomerOrder, 'id' | 'createdAt'>): CustomerOrder {
+    const now = new Date().toISOString();
+    const newOrder: CustomerOrder = {
+      ...orderData,
+      id: generateUUID(),
+      createdAt: now,
+      completedAt: orderData.status === '수령완료' ? (orderData.completedAt || now) : undefined,
+    };
+    this.orders = [newOrder, ...this.orders];
+    this.saveToStorage();
+    return newOrder;
+  }
+
+  public updateCustomerOrderStatus(orderId: string, status: CustomerOrderStatus): boolean {
+    const orderIndex = this.orders.findIndex((o) => o.id === orderId);
+    if (orderIndex === -1) return false;
+
+    const existing = this.orders[orderIndex];
+    const now = new Date().toISOString();
+
+    this.orders[orderIndex] = {
+      ...existing,
+      status,
+      completedAt:
+        status === '수령완료'
+          ? (existing.completedAt || now)
+          : (status === '취소됨' ? undefined : existing.completedAt),
+    };
+    this.saveToStorage();
+    return true;
+  }
+
+  public updateCustomerOrder(orderId: string, updates: Partial<CustomerOrder>): boolean {
+    const orderIndex = this.orders.findIndex((o) => o.id === orderId);
+    if (orderIndex === -1) return false;
+
+    const existing = this.orders[orderIndex];
+    const now = new Date().toISOString();
+    const nextStatus = updates.status ?? existing.status;
+
+    this.orders[orderIndex] = {
+      ...existing,
+      ...updates,
+      completedAt:
+        nextStatus === '수령완료'
+          ? (updates.completedAt ?? existing.completedAt ?? now)
+          : updates.completedAt,
+    };
+    this.saveToStorage();
+    return true;
+  }
+
+  public deleteCustomerOrder(orderId: string): boolean {
+    const prevLength = this.orders.length;
+    this.orders = this.orders.filter((o) => o.id !== orderId);
+    if (this.orders.length !== prevLength) {
+      this.saveToStorage();
+      return true;
+    }
+    return false;
+  }
+
+  public getCustomerOrderStats() {
+    const pendingOrders = this.orders.filter((o) => o.status === '주문접수' || o.status === '입고완료' || o.status === '수령대기');
+    const receivedOrders = this.orders.filter((o) => o.status === '주문접수');
+    const arrivedOrders = this.orders.filter((o) => o.status === '입고완료' || o.status === '수령대기');
+    const completedOrders = this.orders.filter((o) => o.status === '수령완료');
+
+    return {
+      total: this.orders.length,
+      pending: pendingOrders.length,
+      received: receivedOrders.length,
+      arrived: arrivedOrders.length,
+      completed: completedOrders.length,
+    };
   }
 
   /**

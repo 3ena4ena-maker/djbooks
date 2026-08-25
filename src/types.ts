@@ -79,3 +79,23 @@ export type ViewType = 'dashboard' | 'scanner' | 'inventory' | 'detail' | 'histo
 export type InventoryFilter = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
 export type InventorySort = 'updated' | 'stock_asc' | 'stock_desc' | 'title' | 'price_desc';
 
+// Customer Book Order (손님 주문/예약 도서)
+export type CustomerOrderStatus = '주문접수' | '입고완료' | '수령대기' | '수령완료' | '취소됨';
+
+export interface CustomerOrder {
+  id: string;
+  bookTitle: string;
+  bookAuthor?: string;
+  bookPublisher?: string;
+  quantity: number;
+  customerName: string;
+  customerContact: string; // 전화번호 / SNS / 연락처
+  depositPaid?: boolean; // 선결제/예약금 여부
+  orderPrice?: number;
+  status: CustomerOrderStatus;
+  note?: string; // 특이사항 (예: 선물포장, 입고 즉시 문자요망 등)
+  orderDate: string;
+  createdAt: string;
+  completedAt?: string; // 수령/판매 완료 일시
+}
+

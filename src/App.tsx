@@ -135,6 +135,7 @@ export default function App() {
                 onOpenAddBook={() => setIsAddBookOpen(true)}
                 onOpenQuickRestock={() => setIsQuickRestockOpen(true)}
                 onFilterLowStock={handleFilterLowStock}
+                onShowToast={showToast}
               />
             )}
 

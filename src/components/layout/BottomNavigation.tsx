@@ -1,6 +1,6 @@
 import React from 'react';
 import { ViewType } from '../../types';
-import { LayoutDashboard, BookOpen, ScanLine, History, MoreHorizontal } from 'lucide-react';
+import { LayoutDashboard, BookOpen, ScanLine, History, Settings } from 'lucide-react';
 
 interface BottomNavigationProps {
   currentView: ViewType;
@@ -34,8 +34,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
     },
     {
       id: 'settings',
-      label: '더보기',
-      icon: <MoreHorizontal className="w-5 h-5" />,
+      label: '설정',
+      icon: <Settings className="w-5 h-5" />,
     },
   ];
 

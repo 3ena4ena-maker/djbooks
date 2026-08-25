@@ -15,8 +15,25 @@ import { QuickRestockModal } from './components/modals/QuickRestockModal';
 import { Toast } from './components/common/Toast';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
-  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  // Parse current route from window location hash
+  const parseHashRoute = (): { view: ViewType; bookId: string | null } => {
+    const hash = window.location.hash.replace(/^#\/?/, '').trim();
+    if (!hash || hash === 'dashboard' || hash === 'home') {
+      return { view: 'dashboard', bookId: null };
+    }
+    if (hash.startsWith('book/') || hash.startsWith('detail/')) {
+      const bookId = hash.split('/')[1] || null;
+      return { view: 'detail', bookId };
+    }
+    if (hash === 'inventory') return { view: 'inventory', bookId: null };
+    if (hash === 'scanner' || hash === 'scan') return { view: 'scanner', bookId: null };
+    if (hash === 'history' || hash === 'logs') return { view: 'history', bookId: null };
+    if (hash === 'settings') return { view: 'settings', bookId: null };
+    return { view: 'dashboard', bookId: null };
+  };
+
+  const [currentView, setCurrentView] = useState<ViewType>(() => parseHashRoute().view);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(() => parseHashRoute().bookId);
   const [inventoryFilter, setInventoryFilter] = useState<InventoryFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -35,14 +52,34 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Sync state with browser hash navigation (Back/Forward buttons)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const { view, bookId } = parseHashRoute();
+      setCurrentView(view);
+      if (bookId) {
+        setSelectedBookId(bookId);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
   const handleNavigate = (view: ViewType) => {
     setCurrentView(view);
+    if (view === 'dashboard') {
+      window.location.hash = '#/dashboard';
+    } else {
+      window.location.hash = `#/${view}`;
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectBook = (bookId: string) => {
     setSelectedBookId(bookId);
     setCurrentView('detail');
+    window.location.hash = `#/book/${bookId}`;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -154,9 +191,11 @@ export default function App() {
         <AddBookModal
           onClose={() => setIsAddBookOpen(false)}
           onSuccess={(newBookId, msg) => {
+            setIsAddBookOpen(false);
             showToast(msg);
             setSelectedBookId(newBookId);
             setCurrentView('detail');
+            window.location.hash = `#/book/${newBookId}`;
           }}
         />
       )}

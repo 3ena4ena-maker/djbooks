@@ -872,11 +872,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                       </label>
                       <input
                         type="number"
-                        value={newBookCandidate?.price || 15000}
+                        placeholder="0"
+                        value={newBookCandidate?.price !== undefined ? newBookCandidate.price : ''}
                         onChange={(e) =>
                           setNewBookCandidate((prev) => ({
                             ...prev,
-                            price: Number(e.target.value),
+                            price: e.target.value === '' ? 0 : Number(e.target.value),
                           }))
                         }
                         className="w-full bg-white border border-[#c3c7c7] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold"

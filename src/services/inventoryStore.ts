@@ -864,6 +864,7 @@ class InventoryStore {
     }
 
     this.saveToStorage();
+    this.notify();
 
     if (isSupabaseConfigured) {
       await this.persistBookUpdateToSupabase(bookId, updates);
@@ -907,6 +908,7 @@ class InventoryStore {
     delete this.locations[bookId];
     this.logs = this.logs.filter((l) => l.bookId !== bookId);
     this.saveToStorage();
+    this.notify();
 
     if (isSupabaseConfigured) {
       await this.deleteFromSupabase(bookId);

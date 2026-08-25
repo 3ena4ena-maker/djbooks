@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BookWithStock, ViewType } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
 import { StockAdjustModal } from '../components/modals/StockAdjustModal';
+import { EditBookModal } from '../components/modals/EditBookModal';
 import {
   ArrowLeft,
   PlusCircle,
@@ -19,7 +20,10 @@ import {
   BookOpen,
   Trash2,
   AlertTriangle,
-  X
+  X,
+  FileEdit,
+  Camera,
+  UploadCloud
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -37,7 +41,16 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   onShowToast,
 }) => {
   const [modalMode, setModalMode] = useState<'adjust' | 'restock' | 'sell' | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const unsubscribe = inventoryStore.subscribe(() => {
+      setTick((t) => t + 1);
+    });
+    return unsubscribe;
+  }, []);
 
   const book = inventoryStore.getBookById(bookId);
   const logs = inventoryStore.getLogs(bookId);
@@ -85,17 +98,27 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 select-none pb-16">
-      {/* Breadcrumb / Back Navigation */}
-      <div className="flex items-center gap-2 text-sm text-[#434848] font-['Public_Sans','Noto_Sans_KR',sans-serif]">
+      {/* Breadcrumb / Back Navigation & Quick Edit Bar */}
+      <div className="flex items-center justify-between text-sm text-[#434848] font-['Public_Sans','Noto_Sans_KR',sans-serif]">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onBack}
+            className="hover:text-[#171e1e] transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>재고 목록으로 돌아가기</span>
+          </button>
+          <span className="text-[#c3c7c7]">/</span>
+          <span className="text-[#171e1e] font-semibold">{book.category || '소설'}</span>
+        </div>
+
         <button
-          onClick={onBack}
-          className="hover:text-[#171e1e] transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
+          onClick={() => setIsEditModalOpen(true)}
+          className="px-3.5 py-1.5 bg-[#ffffff] hover:bg-[#f5f3ee] border border-[#c3c7c7] text-[#171e1e] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>재고 목록으로 돌아가기</span>
+          <FileEdit className="w-3.5 h-3.5 text-[#171e1e]" />
+          <span>도서 정보 수정</span>
         </button>
-        <span className="text-[#c3c7c7]">/</span>
-        <span className="text-[#171e1e] font-semibold">{book.category || '소설'}</span>
       </div>
 
       {/* Main Grid: Left Column Cover + Actions, Right Column Metadata & Timeline */}
@@ -104,22 +127,36 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
         <div className="lg:col-span-4 flex flex-col gap-5">
           {/* Book Cover Card */}
           <div className="bg-[#ffffff] rounded-2xl p-5 border border-[#c3c7c7] shadow-sm relative overflow-hidden group">
-            <div className="aspect-[2/3] w-full relative rounded-xl overflow-hidden border border-[#c3c7c7] shadow-[inset_4px_0_10px_rgba(0,0,0,0.12)] bg-[#f0eee9]">
+            <div
+              onClick={() => setIsEditModalOpen(true)}
+              className="aspect-[2/3] w-full relative rounded-xl overflow-hidden border border-[#c3c7c7] shadow-[inset_4px_0_10px_rgba(0,0,0,0.12)] bg-[#f0eee9] cursor-pointer"
+              title="클릭하여 도서 표지 및 정보 수정"
+            >
               <img
                 src={book.coverImage}
                 alt={book.title}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 referrerPolicy="no-referrer"
               />
+
+              {/* Hover overlay to directly edit cover image */}
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 text-white p-4 text-center">
+                <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-xs flex items-center justify-center">
+                  <UploadCloud className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-xs font-bold bg-black/60 px-3 py-1 rounded-full">
+                  표지 직접 변경 / 수정
+                </span>
+              </div>
             </div>
 
             {/* Status Badge Overlay */}
-            <div className="absolute top-8 right-8">
+            <div className="absolute top-8 right-8 pointer-events-none">
               <StockBadge quantity={book.quantity} showExactRemaining />
             </div>
           </div>
 
-          {/* Primary Action Buttons (Matching Stitch Image 1) */}
+          {/* Primary Action Buttons */}
           <div className="flex flex-col gap-3 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
             {/* [+ 입고 처리] */}
             <button
@@ -149,6 +186,15 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
               </button>
             </div>
 
+            {/* [도서 정보 및 표지 수정] */}
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="border border-[#c3c7c7] text-[#171e1e] bg-[#ffffff] hover:bg-[#f5f3ee] py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 font-bold text-xs active:translate-y-[1px] cursor-pointer shadow-xs"
+            >
+              <FileEdit className="w-4 h-4 text-[#737878]" />
+              <span>도서 정보 & 표지 수정</span>
+            </button>
+
             {/* [도서 삭제] */}
             <button
               onClick={() => setShowDeleteConfirm(true)}
@@ -164,13 +210,22 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
         <div className="lg:col-span-8 flex flex-col gap-8">
           {/* Header & Core Editorial Metadata */}
           <div className="flex flex-col gap-5">
-            <div>
-              <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl sm:text-4xl md:text-5xl font-bold text-[#171e1e] mb-2 tracking-tight">
-                {book.title}
-              </h1>
-              <h2 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl sm:text-2xl text-[#434848] font-normal italic">
-                {book.author}
-              </h2>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl sm:text-4xl md:text-5xl font-bold text-[#171e1e] mb-2 tracking-tight break-words">
+                  {book.title}
+                </h1>
+                <h2 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl sm:text-2xl text-[#434848] font-normal italic">
+                  {book.author}
+                </h2>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="p-2.5 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-2xl text-[#434848] hover:text-[#171e1e] transition-all cursor-pointer shadow-xs flex-shrink-0"
+                title="도서 정보 수정"
+              >
+                <FileEdit className="w-4 h-4" />
+              </button>
             </div>
 
             {/* Bento-style Metadata Grid */}
@@ -339,6 +394,17 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           initialMode={modalMode}
           onClose={() => setModalMode(null)}
           onSuccess={(msg) => onShowToast(msg)}
+        />
+      )}
+
+      {/* Edit Book Modal */}
+      {isEditModalOpen && (
+        <EditBookModal
+          book={book}
+          onClose={() => setIsEditModalOpen(false)}
+          onSuccess={(_updated, msg) => {
+            onShowToast(msg);
+          }}
         />
       )}
 

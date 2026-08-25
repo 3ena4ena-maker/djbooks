@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Book } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
+import { CoverImageUploader } from '../common/CoverImageUploader';
 import { feedback } from '../../utils/feedback';
 import { X, Check, BookPlus, Sparkles } from 'lucide-react';
 
@@ -21,7 +22,9 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [title, setTitle] = useState(initialData?.title || '');
   const [author, setAuthor] = useState(initialData?.author || '');
   const [publisher, setPublisher] = useState(initialData?.publisher || '');
-  const [price, setPrice] = useState<number>(initialData?.price || 15000);
+  const [price, setPrice] = useState<number | ''>(
+    initialData?.price !== undefined ? initialData.price : ''
+  );
   const [category, setCategory] = useState(initialData?.category || '소설');
   const [bindingType, setBindingType] = useState(initialData?.bindingType || '양장본');
   const [location, setLocation] = useState(initialData?.location || 'A1 선반');
@@ -33,6 +36,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [entryType, setEntryType] = useState<'초기 도서 입고' | '재입고'>('초기 도서 입고');
   const [description, setDescription] = useState(initialData?.description || '');
   const [isSearching, setIsSearching] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleIsbnLookup = async () => {
     if (!isbn.trim()) return;
@@ -55,32 +59,38 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !author.trim()) {
+    if (!title.trim() || !author.trim() || isSubmitting) {
       return;
     }
 
-    const newBook = await inventoryStore.registerBook(
-      {
-        isbn: isbn.trim() || `N/A-${Date.now()}`,
-        title: title.trim(),
-        author: author.trim(),
-        publisher: publisher.trim() || '독립출판',
-        price: Number(price) || 0,
-        category,
-        bindingType,
-        location,
-        coverImage,
-        description,
-        publishedDate: new Date().toISOString().split('T')[0].replace(/-/g, '.'),
-      },
-      initialStock,
-      `${entryType} (${initialStock}권)`,
-      entryType
-    );
+    setIsSubmitting(true);
+    try {
+      const newBook = await inventoryStore.registerBook(
+        {
+          isbn: isbn.trim() || `N/A-${Date.now()}`,
+          title: title.trim(),
+          author: author.trim(),
+          publisher: publisher.trim() || '독립출판',
+          price: price === '' ? 0 : Number(price),
+          category,
+          bindingType,
+          location,
+          coverImage,
+          description,
+          publishedDate: new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+        },
+        initialStock,
+        `${entryType} (${initialStock}권)`,
+        entryType
+      );
 
-    feedback.playBeep('success');
-    onSuccess(newBook.id, `새로운 도서 '${newBook.title}'이(가) 등록되었습니다.`);
-    onClose();
+      feedback.playBeep('success');
+      onClose();
+      onSuccess(newBook.id, `새로운 도서 '${newBook.title}'이(가) 등록되었습니다.`);
+    } catch (err) {
+      console.error('Failed to register book:', err);
+      setIsSubmitting(false);
+    }
   };
 
   const samplePresets = [
@@ -238,7 +248,8 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
                 min="0"
                 step="100"
                 value={price}
-                onChange={(e) => setPrice(Number(e.target.value))}
+                onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="판매가 입력 (예: 15000)"
                 className="w-full px-3 py-2 bg-white border border-[#c3c7c7] rounded-xl focus:border-[#171e1e] outline-none font-mono"
               />
             </div>
@@ -324,18 +335,12 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1">
-              표지 이미지 URL
-            </label>
-            <input
-              type="url"
-              value={coverImage}
-              onChange={(e) => setCoverImage(e.target.value)}
-              placeholder="https://..."
-              className="w-full px-3 py-2 bg-white border border-[#c3c7c7] rounded-xl focus:border-[#171e1e] outline-none text-xs text-[#434848]"
-            />
-          </div>
+          {/* 도서 표지 직접 업로드 / 촬영 / URL / 프리셋 */}
+          <CoverImageUploader
+            value={coverImage}
+            onChange={setCoverImage}
+            label="도서 표지 (직접 파일 등록/촬영)"
+          />
 
           <div>
             <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1">
@@ -353,17 +358,19 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
           <div className="flex gap-2 pt-2 mt-auto">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={onClose}
-              className="flex-1 py-3 border border-[#c3c7c7] rounded-xl text-sm font-semibold text-[#434848] hover:bg-[#eae8e3] transition-colors cursor-pointer"
+              className="flex-1 py-3 border border-[#c3c7c7] rounded-xl text-sm font-semibold text-[#434848] hover:bg-[#eae8e3] transition-colors cursor-pointer disabled:opacity-50"
             >
               취소
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 bg-[#171e1e] text-white rounded-xl text-sm font-semibold hover:bg-[#2c3333] transition-colors flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] cursor-pointer"
+              disabled={isSubmitting}
+              className="flex-1 py-3 bg-[#171e1e] text-white rounded-xl text-sm font-semibold hover:bg-[#2c3333] transition-colors flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] cursor-pointer disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
-              <span>책 등록하기</span>
+              <span>{isSubmitting ? '등록 중...' : '책 등록하기'}</span>
             </button>
           </div>
         </form>

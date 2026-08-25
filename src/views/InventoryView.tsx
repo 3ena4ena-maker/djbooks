@@ -3,6 +3,7 @@ import { BookWithStock, InventoryFilter, InventorySort } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
+import { EditBookModal } from '../components/modals/EditBookModal';
 import {
   Search,
   Plus,
@@ -15,7 +16,8 @@ import {
   ChevronDown,
   Trash2,
   AlertTriangle,
-  X
+  X,
+  FileEdit
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -39,6 +41,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [search, setSearch] = useState<string>(searchQuery);
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
   const [bookToDelete, setBookToDelete] = useState<BookWithStock | null>(null);
+  const [bookToEdit, setBookToEdit] = useState<BookWithStock | null>(null);
 
   const settings = inventoryStore.getSettings();
   const allBooks = inventoryStore.getBooksWithStock();
@@ -311,7 +314,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     {formatDate(book.updatedAt)}
                   </td>
 
-                  {/* Quick delta buttons & Delete Button */}
+                  {/* Quick delta buttons, Edit & Delete Button */}
                   <td className="py-3.5 px-5 align-middle text-center" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1.5">
                       <button
@@ -329,9 +332,19 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                         <PlusCircle className="w-4 h-4" />
                       </button>
                       <button
+                        title="도서 정보 및 표지 수정"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBookToEdit(book);
+                        }}
+                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] transition-colors cursor-pointer"
+                      >
+                        <FileEdit className="w-4 h-4" />
+                      </button>
+                      <button
                         title="도서 삭제"
                         onClick={(e) => handleOpenDeleteConfirm(e, book)}
-                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] opacity-70 hover:opacity-100 transition-all cursor-pointer ml-0.5"
+                        className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] opacity-70 hover:opacity-100 transition-all cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -395,6 +408,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     className="px-2.5 py-1 bg-[#f5f3ee] text-[#3c4c20] hover:bg-[#d6eaaf] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                   >
                     +1 입고
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBookToEdit(book);
+                    }}
+                    title="도서 정보 및 표지 수정"
+                    className="p-1.5 bg-[#f5f3ee] text-[#171e1e] hover:bg-[#eae8e3] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
+                  >
+                    <FileEdit className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={(e) => handleOpenDeleteConfirm(e, book)}
@@ -480,6 +503,17 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* EDIT BOOK MODAL */}
+      {bookToEdit && (
+        <EditBookModal
+          book={bookToEdit}
+          onClose={() => setBookToEdit(null)}
+          onSuccess={(_updated, msg) => {
+            onShowToast(msg);
+            setBookToEdit(null);
+          }}
+        />
       )}
     </div>
   );

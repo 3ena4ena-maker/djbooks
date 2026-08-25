@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, ScanLine, Cloud, CloudOff, RefreshCw } from 'lucide-react';
+import { Search, ScanLine, Cloud, CloudOff, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import { ViewType } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
 
@@ -48,15 +48,38 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   const settings = inventoryStore.getSettings();
 
+  const viewTitleMap: Record<ViewType, string> = {
+    dashboard: '홈',
+    inventory: '도서 재고',
+    scanner: '바코드 스캔',
+    history: '재고 기록',
+    settings: '서점 설정',
+    detail: '도서 상세',
+  };
+
   return (
     <header className="bg-[#fbf9f4] border-b border-[#c3c7c7] fixed top-0 w-full z-30 flex justify-between items-center h-16 px-4 md:px-8 lg:ml-64 lg:w-[calc(100%-16rem)] select-none">
-      {/* Mobile Title with Store Name */}
-      <div
-        className="lg:hidden font-['Playfair_Display','Noto_Serif_KR',serif] text-lg sm:text-xl font-bold text-[#171e1e] cursor-pointer truncate max-w-[200px]"
-        onClick={() => onNavigate('dashboard')}
-        title={settings.storeName || '책방 재고'}
-      >
-        {settings.storeName || '책방 재고'}
+      {/* Mobile Title with Store Name & Current Page */}
+      <div className="lg:hidden flex items-center gap-2">
+        <span
+          className="font-['Playfair_Display','Noto_Serif_KR',serif] text-base sm:text-lg font-bold text-[#171e1e] cursor-pointer truncate max-w-[130px]"
+          onClick={() => onNavigate('dashboard')}
+          title={settings.storeName || '책방 재고'}
+        >
+          {settings.storeName || '책방'}
+        </span>
+        {currentView && currentView !== 'dashboard' && (
+          <span className="text-xs font-semibold text-[#434848] bg-[#f0eee9] px-2 py-0.5 rounded-md border border-[#c3c7c7] whitespace-nowrap">
+            {viewTitleMap[currentView] || ''}
+          </span>
+        )}
+      </div>
+
+      {/* Desktop Page Location Indicator */}
+      <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
+        <span className="text-xs font-bold text-[#171e1e] bg-[#f0eee9] px-3 py-1 rounded-full border border-[#c3c7c7] shadow-2xs">
+          📍 {currentView ? viewTitleMap[currentView] : '홈'}
+        </span>
       </div>
 
       {/* Global Search Bar (Desktop) */}
@@ -124,10 +147,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         <button
           onClick={() => onNavigate('settings')}
-          className="p-2 text-[#434848] hover:bg-[#f5f3ee] rounded-full transition-colors relative cursor-pointer"
+          className="p-2 text-[#434848] hover:bg-[#f5f3ee] hover:text-[#171e1e] rounded-full transition-colors relative cursor-pointer"
           title="설정"
         >
-          <span className="material-symbols-outlined text-[22px]">settings</span>
+          <SettingsIcon className="w-5 h-5" />
         </button>
       </div>
     </header>

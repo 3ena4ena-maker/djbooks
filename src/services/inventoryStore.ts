@@ -57,7 +57,7 @@ export function generateUUID(): string {
 
 // Helper to map UI reason to Supabase transaction_type
 export function reasonToTransactionType(reason: StockReason, changeQty: number): TransactionType {
-  if (reason === '입고') return 'IN';
+  if (reason === '입고' || reason === '초기 도서 입고' || reason === '재입고') return 'IN';
   if (reason === '판매') return 'OUT';
   if (reason === '반품') return changeQty >= 0 ? 'IN' : 'OUT';
   if (reason === '파손' || reason === '증정' || reason === '분실') return 'OUT';
@@ -67,6 +67,8 @@ export function reasonToTransactionType(reason: StockReason, changeQty: number):
 // Helper to deduce UI StockReason from Supabase transaction_type & note
 export function transactionTypeToReason(type: string, note?: string | null): StockReason {
   if (note) {
+    if (note.includes('초기') || note.includes('초도') || note.includes('신규')) return '초기 도서 입고';
+    if (note.includes('재입고')) return '재입고';
     if (note.includes('입고')) return '입고';
     if (note.includes('판매')) return '판매';
     if (note.includes('반품')) return '반품';
@@ -733,7 +735,8 @@ class InventoryStore {
   public async registerBook(
     bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>,
     initialQuantity: number = 1,
-    note?: string
+    note?: string,
+    entryType: '초기 도서 입고' | '재입고' = '초기 도서 입고'
   ): Promise<BookWithStock> {
     const generatedBookId = generateUUID();
     const now = new Date().toISOString();
@@ -782,7 +785,7 @@ class InventoryStore {
             book_id: finalBookId,
             change_quantity: initialQuantity,
             transaction_type: 'IN',
-            note: note || `신규 도서 초도 입고 (${initialQuantity}권)`,
+            note: note || (entryType === '초기 도서 입고' ? `신규 도서 초기 입고 (${initialQuantity}권)` : `신규 도서 재입고 (${initialQuantity}권)`),
             created_at: now,
           });
         }
@@ -815,9 +818,9 @@ class InventoryStore {
       bookCoverImage: newBook.coverImage,
       changeQuantity: initialQuantity,
       resultingQuantity: initialQuantity,
-      reason: '입고',
+      reason: entryType,
       transactionType: 'IN',
-      note: note || `신규 도서 등록 및 초도 입고 (${initialQuantity}권)`,
+      note: note || (entryType === '초기 도서 입고' ? `신규 도서 등록 및 초기 입고 (${initialQuantity}권)` : `신규 도서 등록 및 재입고 (${initialQuantity}권)`),
       createdAt: now,
     };
 
@@ -828,6 +831,21 @@ class InventoryStore {
       ...newBook,
       quantity: initialQuantity,
     };
+  }
+
+  public async deleteLog(logId: string): Promise<boolean> {
+    this.logs = this.logs.filter((l) => l.id !== logId);
+    this.saveToStorage();
+    this.notify();
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('inventory_transactions').delete().eq('id', logId);
+      } catch (e) {
+        console.error('Error deleting inventory transaction from Supabase:', e);
+      }
+    }
+    return true;
   }
 
   public async updateBook(bookId: string, updates: Partial<Book>): Promise<boolean> {

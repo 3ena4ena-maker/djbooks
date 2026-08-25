@@ -90,7 +90,7 @@ export default function App() {
           />
 
           {/* Main View Router Container */}
-          <main className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 pb-28 lg:pb-12 max-w-7xl w-full mx-auto">
+          <main className="flex-1 pt-20 sm:pt-20 md:pt-22 px-4 sm:px-6 md:px-8 lg:px-10 pb-28 lg:pb-12 max-w-7xl w-full mx-auto">
             {currentView === 'dashboard' && (
               <DashboardView
                 onNavigate={handleNavigate}
@@ -132,6 +132,7 @@ export default function App() {
               <HistoryView
                 onSelectBook={handleSelectBook}
                 onNavigateHome={() => handleNavigate('dashboard')}
+                onShowToast={showToast}
               />
             )}
 

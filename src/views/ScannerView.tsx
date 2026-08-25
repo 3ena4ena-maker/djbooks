@@ -50,6 +50,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     (Partial<Book> & { isExternalFound?: boolean }) | null
   >(null);
   const [newBookStock, setNewBookStock] = useState<number>(3);
+  const [newBookEntryType, setNewBookEntryType] = useState<'초기 도서 입고' | '재입고'>('초기 도서 입고');
   const [isLoadingMetadata, setIsLoadingMetadata] = useState<boolean>(false);
 
   const qrReaderRef = useRef<Html5Qrcode | null>(null);
@@ -454,7 +455,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           new Date().toISOString().split('T')[0].replace(/-/g, '.'),
       },
       newBookStock,
-      `스캐너 신규 도서 등록 (초도 입고: ${newBookStock}권)`
+      `스캐너 ${newBookEntryType} (${newBookStock}권)`,
+      newBookEntryType
     );
 
     feedback.playBeep('success');
@@ -830,6 +832,39 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                     </div>
                   </div>
 
+                  {/* 입고 종류 선택 토글 */}
+                  <div>
+                    <label className="text-[11px] text-[#737878] font-bold block mb-1">
+                      입고 종류 *
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewBookEntryType('초기 도서 입고')}
+                        className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          newBookEntryType === '초기 도서 입고'
+                            ? 'bg-[#171e1e] text-white border-[#171e1e] shadow-xs'
+                            : 'bg-white text-[#434848] border-[#c3c7c7] hover:bg-[#f5f3ee]'
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-[#d6eaaf]"></span>
+                        초기 도서 입고
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewBookEntryType('재입고')}
+                        className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          newBookEntryType === '재입고'
+                            ? 'bg-[#171e1e] text-white border-[#171e1e] shadow-xs'
+                            : 'bg-white text-[#434848] border-[#c3c7c7] hover:bg-[#f5f3ee]'
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-[#8ea06b]"></span>
+                        재입고
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3 bg-[#f5f3ee] p-3 rounded-xl">
                     <div>
                       <label className="text-[11px] text-[#737878] font-bold block mb-1">
@@ -849,7 +884,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                     </div>
                     <div>
                       <label className="text-[11px] text-[#737878] font-bold block mb-1">
-                        초도 입고 수량
+                        {newBookEntryType === '초기 도서 입고' ? '초기 입고 수량' : '재입고 수량'}
                       </label>
                       <input
                         type="number"
@@ -868,7 +903,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                       className="w-full py-4 bg-[#171e1e] text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#2c3333] shadow-sm cursor-pointer active:scale-[0.98] transition-all"
                     >
                       <BookPlus className="w-5 h-5 text-[#d6eaaf]" />
-                      <span>책 등록하기 (+{newBookStock}권 입고)</span>
+                      <span>{newBookEntryType} (+{newBookStock}권)</span>
                     </button>
 
                     <button

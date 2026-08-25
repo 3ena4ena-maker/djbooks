@@ -1,4 +1,5 @@
 import React from 'react';
+import { inventoryStore } from '../../services/inventoryStore';
 
 interface StockBadgeProps {
   quantity: number;
@@ -9,10 +10,14 @@ interface StockBadgeProps {
 
 export const StockBadge: React.FC<StockBadgeProps> = ({
   quantity,
-  threshold = 3,
+  threshold,
   showExactRemaining = false,
   className = '',
 }) => {
+  const currentThreshold = threshold !== undefined 
+    ? threshold 
+    : inventoryStore.getSettings().lowStockThreshold;
+
   if (quantity <= 0) {
     return (
       <span
@@ -23,7 +28,7 @@ export const StockBadge: React.FC<StockBadgeProps> = ({
     );
   }
 
-  if (quantity <= threshold) {
+  if (currentThreshold > 0 && quantity <= currentThreshold) {
     return (
       <span
         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide bg-[#ffdad6] text-[#93000a] whitespace-nowrap ${className}`}

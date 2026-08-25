@@ -1,4 +1,4 @@
-export type StockReason = '입고' | '판매' | '반품' | '파손' | '증정' | '분실' | '기타';
+export type StockReason = '입고' | '초기 도서 입고' | '재입고' | '판매' | '반품' | '파손' | '증정' | '분실' | '기타';
 export type TransactionType = 'IN' | 'OUT' | 'ADJUST';
 
 // Supabase Database Table Interfaces

@@ -30,6 +30,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
       'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600'
   );
   const [initialStock, setInitialStock] = useState<number>(5);
+  const [entryType, setEntryType] = useState<'초기 도서 입고' | '재입고'>('초기 도서 입고');
   const [description, setDescription] = useState(initialData?.description || '');
   const [isSearching, setIsSearching] = useState(false);
 
@@ -73,7 +74,8 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         publishedDate: new Date().toISOString().split('T')[0].replace(/-/g, '.'),
       },
       initialStock,
-      `신규 도서 등록 (초도 재고: ${initialStock}권)`
+      `${entryType} (${initialStock}권)`,
+      entryType
     );
 
     feedback.playBeep('success');
@@ -242,10 +244,43 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
             </div>
           </div>
 
+          {/* 입고 종류 분류 선택 */}
+          <div>
+            <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1.5">
+              입고 종류 *
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setEntryType('초기 도서 입고')}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  entryType === '초기 도서 입고'
+                    ? 'bg-[#171e1e] text-white border-[#171e1e] shadow-xs'
+                    : 'bg-white text-[#434848] border-[#c3c7c7] hover:bg-[#f5f3ee]'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-[#d6eaaf]"></span>
+                초기 도서 입고 (최초 등록)
+              </button>
+              <button
+                type="button"
+                onClick={() => setEntryType('재입고')}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  entryType === '재입고'
+                    ? 'bg-[#171e1e] text-white border-[#171e1e] shadow-xs'
+                    : 'bg-white text-[#434848] border-[#c3c7c7] hover:bg-[#f5f3ee]'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-[#8ea06b]"></span>
+                재입고 (추가 입고)
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1">
-                초도 재고
+                {entryType === '초기 도서 입고' ? '초기 재고' : '입고 수량'}
               </label>
               <input
                 type="number"

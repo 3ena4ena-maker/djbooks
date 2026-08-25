@@ -114,41 +114,25 @@ CREATE INDEX IF NOT EXISTS idx_inventory_logs_book_id ON inventory_logs(book_id)
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-8 select-none pb-16">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl font-bold text-[#171e1e] mb-1.5 flex items-center gap-2">
-            <SettingsIcon className="w-7 h-7 text-[#737878]" />
-            서점 환경 설정
-          </h1>
-          <p className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-sm text-[#434848]">
-            책방 정보, 재고 부족 경고 기준, 데이터베이스 설정을 관리합니다.
-          </p>
-        </div>
-
-        {/* Top Quick Save Button */}
-        <button
-          type="button"
-          onClick={() => handleSave()}
-          className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer ${
-            isSaved
-              ? 'bg-[#d6eaaf] text-[#142000]'
-              : 'bg-[#171e1e] text-white hover:bg-[#2c3333] active:scale-98'
-          }`}
-        >
-          <Check className="w-4 h-4" />
-          <span>{isSaved ? '저장 완료!' : '수정 저장'}</span>
-        </button>
+      <div>
+        <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl font-bold text-[#171e1e] mb-1.5 flex items-center gap-2">
+          <SettingsIcon className="w-7 h-7 text-[#737878]" />
+          서점 환경 설정
+        </h1>
+        <p className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-sm text-[#434848]">
+          책방 정보, 재고 부족 경고 기준, 데이터베이스 설정을 관리합니다.
+        </p>
       </div>
 
       <form onSubmit={handleSave} className="space-y-6 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
         {/* Card 1: Store Information */}
         <div className="bg-white rounded-2xl p-5 md:p-6 border border-[#c3c7c7] shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-[#e4e2dd] pb-3">
+          <div className="border-b border-[#e4e2dd] pb-3 space-y-1">
             <h2 className="text-base font-bold text-[#171e1e] flex items-center gap-2">
               <Store className="w-5 h-5 text-[#737878]" />
               서점 기본 정보
             </h2>
-            <span className="text-xs text-[#737878]">메인 대시보드 및 상단에 실시간 반영</span>
+            <p className="text-xs text-[#737878] pl-7">메인 대시보드 및 상단에 실시간 반영</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

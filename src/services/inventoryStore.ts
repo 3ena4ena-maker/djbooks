@@ -934,143 +934,57 @@ class InventoryStore {
   }
 
   /**
-   * Helper: Query Aladin Open API by ISBN-13
+   * Helper: Query Aladin Open API via Cloudflare Pages Function proxy (/api/aladin)
    */
   private async queryAladinApi(
     isbn13: string
   ): Promise<(Partial<Book> & { isExternalFound?: boolean }) | null> {
-    const env =
-      typeof import.meta !== 'undefined' && import.meta.env
-        ? import.meta.env
-        : ((typeof process !== 'undefined' ? process.env : {}) as any);
-
-    const ttbKey = env?.VITE_ALADIN_TTB_KEY;
-    const proxyUrl = env?.VITE_ALADIN_API_PROXY_URL;
-
-    // Aladin requires a TTBKey (or proxy endpoint)
-    if (!ttbKey && !proxyUrl) {
-      return null;
-    }
-
-    console.log('[Aladin] Request started');
-
-    const targetUrl = proxyUrl
-      ? `${proxyUrl}?isbn=${encodeURIComponent(isbn13)}`
-      : `https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey=${encodeURIComponent(
-          ttbKey || ''
-        )}&itemIdType=ISBN13&ItemId=${encodeURIComponent(
-          isbn13
-        )}&output=js&Version=20131101&Cover=Big`;
-
-    let aladinData: any = null;
-    let httpStatus = 0;
-
-    // 1. Try direct fetch with timeout
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-      const res = await fetch(targetUrl, { signal: controller.signal });
+      const res = await fetch(`/api/aladin?isbn=${encodeURIComponent(isbn13)}`, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
       clearTimeout(timeoutId);
-      httpStatus = res.status;
 
-      if (res.ok) {
-        const text = await res.text();
-        const cleanJson = text.trim().replace(/;$/, '');
-        aladinData = JSON.parse(cleanJson);
+      console.log(`[Aladin Proxy] ISBN: ${isbn13} | HTTP Status: ${res.status}`);
+
+      if (!res.ok) {
+        return null;
       }
-    } catch (errDirect) {
-      // 2. In browser clients, if CORS blocks direct fetch, attempt JSONP fallback
-      if (typeof window !== 'undefined' && !proxyUrl && ttbKey) {
-        try {
-          aladinData = await new Promise<any>((resolve, reject) => {
-            const callbackName = `__aladin_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-            const script = document.createElement('script');
-            const timer = setTimeout(() => {
-              cleanup();
-              reject(new Error('Aladin JSONP Timeout'));
-            }, 6000);
 
-            const cleanup = () => {
-              clearTimeout(timer);
-              if (script.parentNode) script.parentNode.removeChild(script);
-              delete (window as any)[callbackName];
-            };
-
-            (window as any)[callbackName] = (data: any) => {
-              cleanup();
-              resolve(data);
-            };
-
-            script.onerror = (e) => {
-              cleanup();
-              reject(e);
-            };
-
-            script.src = `https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey=${encodeURIComponent(
-              ttbKey
-            )}&itemIdType=ISBN13&ItemId=${encodeURIComponent(
-              isbn13
-            )}&output=js&Version=20131101&Cover=Big&callback=${callbackName}`;
-
-            document.body.appendChild(script);
-          });
-          httpStatus = 200;
-        } catch (errJsonp) {
-          // JSONP also failed
-        }
+      const data = await res.json();
+      if (data?.success && data?.book) {
+        console.log(`[Aladin Proxy] Result: found | Title: ${data.book.title}`);
+        return {
+          isbn: data.book.isbn || isbn13,
+          title: data.book.title || '',
+          author: data.book.author || '저자 미상',
+          publisher: data.book.publisher || '출판사 미상',
+          price: typeof data.book.price === 'number' ? data.book.price : 15000,
+          category: data.book.category || '소설/일반',
+          publishedDate: data.book.publishedDate || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+          bindingType: '무선제본',
+          location: '신간 매대',
+          coverImage:
+            data.book.coverImage ||
+            'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+          description: data.book.description || '',
+          isExternalFound: true,
+        };
       }
+
+      if (data?.reason) {
+        console.log(`[Aladin Proxy] Result: ${data.reason}`);
+      }
+    } catch (err: any) {
+      console.warn('[Aladin Proxy] Request error or timeout');
     }
 
-    if (httpStatus > 0) {
-      console.log('[Aladin] HTTP Status:', httpStatus);
-    }
-
-    if (aladinData?.item && Array.isArray(aladinData.item) && aladinData.item.length > 0) {
-      const item = aladinData.item[0];
-      const title = item.title || '';
-      const author = item.author || '저자 미상';
-      const publisher = item.publisher || '출판사 미상';
-      let coverImg = item.cover || '';
-      if (coverImg.startsWith('http://')) {
-        coverImg = coverImg.replace('http://', 'https://');
-      }
-      if (!coverImg) {
-        coverImg =
-          'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
-      }
-
-      const rawCategory = item.categoryName || '';
-      const category = rawCategory.includes('>')
-        ? rawCategory.split('>')[1] || rawCategory
-        : rawCategory || '소설/일반';
-
-      const pubDate = item.pubDate
-        ? item.pubDate.replace(/-/g, '.')
-        : new Date().toISOString().split('T')[0].replace(/-/g, '.');
-
-      const price = Number(item.priceStandard) || Number(item.priceSales) || 15000;
-
-      console.log('[Aladin] Result: found');
-      console.log('[Aladin] Title:', title);
-
-      return {
-        isbn: item.isbn13 || isbn13,
-        title,
-        author,
-        publisher,
-        price,
-        category,
-        publishedDate: pubDate,
-        bindingType: '무선제본',
-        location: '신간 매대',
-        coverImage: coverImg,
-        description: item.description || '',
-        isExternalFound: true,
-      };
-    }
-
-    console.log('[Aladin] Result: not found');
     return null;
   }
 

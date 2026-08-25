@@ -1,1 +1,38 @@
 @import "tailwindcss";
+
+/* Clean up duplicate HTML5-QRCode internal overlays and ensure video fits edge-to-edge */
+#scanner-viewfinder #qr-shaded-region {
+  display: none !important;
+}
+
+#scanner-viewfinder > div {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+}
+
+#scanner-viewfinder video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* Smooth laser scan animation */
+@keyframes laserSweep {
+  0% {
+    top: 6%;
+    opacity: 0.6;
+  }
+  50% {
+    top: 92%;
+    opacity: 1;
+  }
+  100% {
+    top: 6%;
+    opacity: 0.6;
+  }
+}
+
+.scan-laser-active {
+  animation: laserSweep 2.2s ease-in-out infinite;
+}

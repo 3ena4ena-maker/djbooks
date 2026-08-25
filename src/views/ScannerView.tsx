@@ -161,19 +161,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     ];
 
     const config = {
-      fps: 25, // Higher scanning frequency for rapid 1D barcode edge detection
-      qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-        // Broad generous bounding box to capture varying ISBN barcode lengths, tilts and margins
-        const w = Math.floor(viewfinderWidth * 0.95);
-        const h = Math.floor(viewfinderHeight * 0.6);
-        return {
-          width: Math.max(300, Math.min(w, 640)),
-          height: Math.max(140, Math.min(h, 320)),
-        };
-      },
+      fps: 30, // 30 FPS for instant real-time barcode edge detection
       disableFlip: false,
       experimentalFeatures: {
-        useBarCodeDetectorIfSupported: true, // Native browser barcode detector API (BarcodeDetector)
+        useBarCodeDetectorIfSupported: true, // Native hardware-accelerated BarcodeDetector API
       },
     };
 
@@ -186,7 +177,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     };
 
     try {
-      // 2. Primary attempt: standard facingMode
+      // 2. Primary attempt: standard facingMode with high-resolution continuous focus
       const primaryScanner = new Html5Qrcode(scannerContainerId, {
         formatsToSupport: formats,
         verbose: false,
@@ -199,8 +190,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         await primaryScanner.start(
           {
             facingMode: facingMode,
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
           },
           config,
           onScanSuccess,
@@ -611,16 +602,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </p>
           </div>
 
-          {/* Target Frame */}
-          <div className="relative w-80 h-36 sm:w-96 sm:h-44 border-2 border-white/70 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-            {/* Corner accents (Sage Green) */}
-            <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-[#d6eaaf] rounded-tl-xl" />
-            <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-[#d6eaaf] rounded-tr-xl" />
-            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-[#d6eaaf] rounded-bl-xl" />
-            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-[#d6eaaf] rounded-br-xl" />
+          {/* Single Large Target Frame */}
+          <div className="relative w-[88%] max-w-[440px] h-48 sm:h-56 border-2 border-white/60 rounded-3xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] flex items-center justify-center">
+            {/* Bold Corner Accents (Sage Green) */}
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-[#d6eaaf] rounded-tl-2xl" />
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-[#d6eaaf] rounded-tr-2xl" />
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-[#d6eaaf] rounded-bl-2xl" />
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-[#d6eaaf] rounded-br-2xl" />
 
-            {/* Animated Laser Scanning Line */}
-            <div className="absolute left-0 right-0 h-[2px] bg-[#d6eaaf] shadow-[0_0_10px_#d6eaaf] animate-pulse scan-laser" />
+            {/* Smooth Animated Laser Scanning Line */}
+            <div className="absolute left-3 right-3 h-[2.5px] bg-[#d6eaaf] shadow-[0_0_12px_#d6eaaf] scan-laser-active" />
           </div>
         </div>
 

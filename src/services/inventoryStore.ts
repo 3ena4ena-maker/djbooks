@@ -333,27 +333,42 @@ class InventoryStore {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!ordersError && Array.isArray(dbOrders)) {
-          const mappedOrders: CustomerOrder[] = dbOrders.map((o: DbCustomerOrder) => ({
-            id: o.id,
-            bookTitle: o.book_title,
-            bookAuthor: o.book_author || undefined,
-            bookPublisher: o.book_publisher || undefined,
-            quantity: Number(o.quantity) || 1,
-            customerName: o.customer_name,
-            customerContact: o.customer_contact,
-            depositPaid: Boolean(o.deposit_paid),
-            orderPrice: o.order_price ? Number(o.order_price) : undefined,
-            status: (o.status as CustomerOrderStatus) || '주문접수',
-            note: o.note || undefined,
-            orderDate: o.order_date || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
-            createdAt: o.created_at || new Date().toISOString(),
-            completedAt: o.completed_at || undefined,
-          }));
+        if (ordersError) {
+          console.error('[InventoryStore] Supabase customer_orders 조회 실패:', ordersError);
+        } else if (Array.isArray(dbOrders)) {
+          const mappedOrders: CustomerOrder[] = dbOrders.map((o: DbCustomerOrder) => {
+            const depositAmt = Number(o.deposit_amount) || 0;
+            const isDepositPaid = Boolean(depositAmt > 0 || (o.deposit_method && o.deposit_method !== 'NONE'));
+            const orderDateStr = o.created_at
+              ? o.created_at.split('T')[0].replace(/-/g, '.')
+              : new Date().toISOString().split('T')[0].replace(/-/g, '.');
+
+            return {
+              id: o.id,
+              bookTitle: o.book_title,
+              bookAuthor: o.book_author || undefined,
+              bookPublisher: o.publisher || undefined,
+              isbn: o.isbn || undefined,
+              quantity: Number(o.quantity) || 1,
+              customerName: o.customer_name,
+              customerContact: o.contact || '',
+              depositPaid: isDepositPaid,
+              depositAmount: depositAmt,
+              depositMethod: o.deposit_method || 'NONE',
+              orderPrice: o.total_price !== null && o.total_price !== undefined ? Number(o.total_price) : undefined,
+              orderType: o.order_type || 'CUSTOMER_REQUEST',
+              status: (o.status as CustomerOrderStatus) || '주문접수',
+              note: o.memo || undefined,
+              orderDate: orderDateStr,
+              createdAt: o.created_at || new Date().toISOString(),
+              completedAt: o.completed_at || undefined,
+            };
+          });
           this.orders = mappedOrders;
+          console.log(`[InventoryStore] Supabase customer_orders ${mappedOrders.length}건 로드 완료`);
         }
       } catch (orderErr) {
-        console.warn('Customer orders fetch skipped or failed:', orderErr);
+        console.error('[InventoryStore] Supabase customer_orders fetch 에러:', orderErr);
       }
 
       this.books = mappedBooks;
@@ -1063,9 +1078,18 @@ class InventoryStore {
   public addCustomerOrder(orderData: Omit<CustomerOrder, 'id' | 'createdAt'>): CustomerOrder {
     const now = new Date().toISOString();
     const newId = generateUUID();
+    const depositAmt = orderData.depositAmount !== undefined
+      ? orderData.depositAmount
+      : (orderData.depositPaid ? (orderData.orderPrice || 0) : 0);
+    const depositMeth = orderData.depositMethod || (orderData.depositPaid ? 'CARD' : 'NONE');
+    const orderDateStr = orderData.orderDate || now.split('T')[0].replace(/-/g, '.');
+
     const newOrder: CustomerOrder = {
       ...orderData,
       id: newId,
+      orderDate: orderDateStr,
+      depositAmount: depositAmt,
+      depositMethod: depositMeth,
       createdAt: now,
       completedAt: orderData.status === '수령완료' ? (orderData.completedAt || now) : undefined,
     };
@@ -1075,24 +1099,32 @@ class InventoryStore {
     if (isSupabaseConfigured) {
       (async () => {
         try {
-          await supabase.from('customer_orders').insert({
+          const { data, error } = await supabase.from('customer_orders').insert({
             id: newId,
+            customer_name: orderData.customerName,
+            contact: orderData.customerContact || '',
             book_title: orderData.bookTitle,
             book_author: orderData.bookAuthor || null,
-            book_publisher: orderData.bookPublisher || null,
-            quantity: orderData.quantity,
-            customer_name: orderData.customerName,
-            customer_contact: orderData.customerContact,
-            deposit_paid: orderData.depositPaid ?? false,
-            order_price: orderData.orderPrice || null,
+            publisher: orderData.bookPublisher || null,
+            isbn: orderData.isbn || null,
+            quantity: orderData.quantity || 1,
+            order_type: orderData.orderType || 'CUSTOMER_REQUEST',
+            deposit_amount: depositAmt,
+            deposit_method: depositMeth,
+            total_price: orderData.orderPrice !== undefined ? orderData.orderPrice : null,
             status: orderData.status,
-            note: orderData.note || null,
-            order_date: orderData.orderDate,
+            memo: orderData.note || null,
             created_at: now,
             completed_at: newOrder.completedAt || null,
           });
+
+          if (error) {
+            console.error('[InventoryStore] Supabase customer_orders INSERT 실패:', error);
+          } else {
+            console.log('[InventoryStore] Supabase customer_orders INSERT 성공:', newId, data);
+          }
         } catch (e) {
-          console.error('Error adding customer order to Supabase:', e);
+          console.error('[InventoryStore] Supabase customer_orders INSERT 예외 발생:', e);
         }
       })();
     }
@@ -1121,15 +1153,21 @@ class InventoryStore {
     if (isSupabaseConfigured) {
       (async () => {
         try {
-          await supabase
+          const { data, error } = await supabase
             .from('customer_orders')
             .update({
               status,
               completed_at: completedAt || null,
             })
             .eq('id', orderId);
+
+          if (error) {
+            console.error('[InventoryStore] Supabase customer_orders 상태 UPDATE 실패:', error);
+          } else {
+            console.log('[InventoryStore] Supabase customer_orders 상태 UPDATE 성공:', orderId, status, data);
+          }
         } catch (e) {
-          console.error('Error updating customer order status in Supabase:', e);
+          console.error('[InventoryStore] Supabase customer_orders 상태 UPDATE 예외 발생:', e);
         }
       })();
     }
@@ -1160,22 +1198,34 @@ class InventoryStore {
       (async () => {
         try {
           const payload: Record<string, unknown> = {};
-          if (updates.bookTitle !== undefined) payload.book_title = updates.bookTitle;
-          if (updates.bookAuthor !== undefined) payload.book_author = updates.bookAuthor;
-          if (updates.bookPublisher !== undefined) payload.book_publisher = updates.bookPublisher;
-          if (updates.quantity !== undefined) payload.quantity = updates.quantity;
           if (updates.customerName !== undefined) payload.customer_name = updates.customerName;
-          if (updates.customerContact !== undefined) payload.customer_contact = updates.customerContact;
-          if (updates.depositPaid !== undefined) payload.deposit_paid = updates.depositPaid;
-          if (updates.orderPrice !== undefined) payload.order_price = updates.orderPrice;
+          if (updates.customerContact !== undefined) payload.contact = updates.customerContact;
+          if (updates.bookTitle !== undefined) payload.book_title = updates.bookTitle;
+          if (updates.bookAuthor !== undefined) payload.book_author = updates.bookAuthor || null;
+          if (updates.bookPublisher !== undefined) payload.publisher = updates.bookPublisher || null;
+          if (updates.isbn !== undefined) payload.isbn = updates.isbn || null;
+          if (updates.quantity !== undefined) payload.quantity = updates.quantity;
+          if (updates.orderType !== undefined) payload.order_type = updates.orderType;
+          if (updates.depositAmount !== undefined) {
+            payload.deposit_amount = updates.depositAmount;
+          } else if (updates.depositPaid !== undefined) {
+            payload.deposit_amount = updates.depositPaid ? (updates.orderPrice ?? existing.orderPrice ?? 0) : 0;
+            payload.deposit_method = updates.depositPaid ? 'CARD' : 'NONE';
+          }
+          if (updates.depositMethod !== undefined) payload.deposit_method = updates.depositMethod;
+          if (updates.orderPrice !== undefined) payload.total_price = updates.orderPrice;
           if (updates.status !== undefined) payload.status = updates.status;
-          if (updates.note !== undefined) payload.note = updates.note;
-          if (updates.orderDate !== undefined) payload.order_date = updates.orderDate;
+          if (updates.note !== undefined) payload.memo = updates.note || null;
           if (completedAt !== undefined) payload.completed_at = completedAt;
 
-          await supabase.from('customer_orders').update(payload).eq('id', orderId);
+          const { data, error } = await supabase.from('customer_orders').update(payload).eq('id', orderId);
+          if (error) {
+            console.error('[InventoryStore] Supabase customer_orders UPDATE 실패:', error);
+          } else {
+            console.log('[InventoryStore] Supabase customer_orders UPDATE 성공:', orderId, data);
+          }
         } catch (e) {
-          console.error('Error updating customer order in Supabase:', e);
+          console.error('[InventoryStore] Supabase customer_orders UPDATE 예외 발생:', e);
         }
       })();
     }
@@ -1192,9 +1242,14 @@ class InventoryStore {
       if (isSupabaseConfigured) {
         (async () => {
           try {
-            await supabase.from('customer_orders').delete().eq('id', orderId);
+            const { data, error } = await supabase.from('customer_orders').delete().eq('id', orderId);
+            if (error) {
+              console.error('[InventoryStore] Supabase customer_orders DELETE 실패:', error);
+            } else {
+              console.log('[InventoryStore] Supabase customer_orders DELETE 성공:', orderId, data);
+            }
           } catch (e) {
-            console.error('Error deleting customer order from Supabase:', e);
+            console.error('[InventoryStore] Supabase customer_orders DELETE 예외 발생:', e);
           }
         })();
       }

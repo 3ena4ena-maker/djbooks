@@ -36,6 +36,7 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
   const [bookTitle, setBookTitle] = useState(order?.bookTitle || '');
   const [bookAuthor, setBookAuthor] = useState(order?.bookAuthor || '');
   const [bookPublisher, setBookPublisher] = useState(order?.bookPublisher || '');
+  const [isbn, setIsbn] = useState(order?.isbn || '');
   const [quantity, setQuantity] = useState<number>(order?.quantity || 1);
   const [customerName, setCustomerName] = useState(order?.customerName || '');
   const [customerContact, setCustomerContact] = useState(order?.customerContact || '');
@@ -119,10 +120,14 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
     author: string;
     publisher: string;
     price: number;
+    isbn?: string;
   }) => {
     setBookTitle(b.title);
     setBookAuthor(b.author);
     setBookPublisher(b.publisher || '');
+    if (b.isbn) {
+      setIsbn(b.isbn);
+    }
     if (b.price) {
       setOrderPrice(b.price * quantity);
     }
@@ -150,6 +155,7 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
         bookTitle: bookTitle.trim(),
         bookAuthor: bookAuthor.trim(),
         bookPublisher: bookPublisher.trim(),
+        isbn: isbn.trim() || undefined,
         quantity: Math.max(1, quantity),
         customerName: customerName.trim(),
         customerContact: customerContact.trim(),
@@ -166,6 +172,7 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
         bookTitle: bookTitle.trim(),
         bookAuthor: bookAuthor.trim(),
         bookPublisher: bookPublisher.trim(),
+        isbn: isbn.trim() || undefined,
         quantity: Math.max(1, quantity),
         customerName: customerName.trim(),
         customerContact: customerContact.trim(),

@@ -49,7 +49,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [newBookCandidate, setNewBookCandidate] = useState<
     (Partial<Book> & { isExternalFound?: boolean }) | null
   >(null);
-  const [newBookStock, setNewBookStock] = useState<number>(3);
+  const [newBookStock, setNewBookStock] = useState<number>(1);
   const [newBookEntryType, setNewBookEntryType] = useState<'초기 도서 입고' | '재입고'>('초기 도서 입고');
   const [isLoadingMetadata, setIsLoadingMetadata] = useState<boolean>(false);
 

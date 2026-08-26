@@ -32,7 +32,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     initialData?.coverImage ||
       'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600'
   );
-  const [initialStock, setInitialStock] = useState<number>(5);
+  const [initialStock, setInitialStock] = useState<number>(1);
   const [entryType, setEntryType] = useState<'초기 도서 입고' | '재입고'>('초기 도서 입고');
   const [description, setDescription] = useState(initialData?.description || '');
   const [isSearching, setIsSearching] = useState(false);

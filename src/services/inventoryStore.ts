@@ -1136,6 +1136,7 @@ class InventoryStore {
     const orderIndex = this.orders.findIndex((o) => o.id === orderId);
     if (orderIndex === -1) return false;
 
+    const previousOrders = [...this.orders];
     const existing = this.orders[orderIndex];
     const now = new Date().toISOString();
     const completedAt =
@@ -1149,6 +1150,7 @@ class InventoryStore {
       completedAt,
     };
     this.saveToStorage();
+    this.notify();
 
     if (isSupabaseConfigured) {
       (async () => {
@@ -1159,15 +1161,45 @@ class InventoryStore {
               status,
               completed_at: completedAt || null,
             })
-            .eq('id', orderId);
+            .eq('id', orderId)
+            .select();
 
           if (error) {
-            console.error('[InventoryStore] Supabase customer_orders 상태 UPDATE 실패:', error);
+            console.error('[InventoryStore] Supabase customer_orders UPDATE 실패:', {
+              orderId,
+              newStatus: status,
+              code: error.code,
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+            });
+            // Supabase UPDATE 실패 시 로컬 상태 롤백
+            this.orders = previousOrders;
+            this.saveToStorage();
+            this.notify();
+          } else if (!data || data.length === 0) {
+            console.warn('[InventoryStore] Supabase customer_orders UPDATE: 수정된 DB 행(row)이 0건입니다.', {
+              orderId,
+              newStatus: status,
+              possibleCause: 'Supabase RLS UPDATE 정책 부재(미허용) 또는 DB에 해당 orderId 행이 없음',
+            });
           } else {
-            console.log('[InventoryStore] Supabase customer_orders 상태 UPDATE 성공:', orderId, status, data);
+            console.log('[InventoryStore] Supabase customer_orders UPDATE 성공:', {
+              orderId,
+              newStatus: status,
+              data,
+            });
           }
         } catch (e) {
-          console.error('[InventoryStore] Supabase customer_orders 상태 UPDATE 예외 발생:', e);
+          console.error('[InventoryStore] Supabase customer_orders UPDATE 예외 발생:', {
+            orderId,
+            newStatus: status,
+            error: e,
+          });
+          // 예외 발생 시 로컬 상태 롤백
+          this.orders = previousOrders;
+          this.saveToStorage();
+          this.notify();
         }
       })();
     }
@@ -1179,6 +1211,7 @@ class InventoryStore {
     const orderIndex = this.orders.findIndex((o) => o.id === orderId);
     if (orderIndex === -1) return false;
 
+    const previousOrders = [...this.orders];
     const existing = this.orders[orderIndex];
     const now = new Date().toISOString();
     const nextStatus = updates.status ?? existing.status;
@@ -1193,6 +1226,7 @@ class InventoryStore {
       completedAt,
     };
     this.saveToStorage();
+    this.notify();
 
     if (isSupabaseConfigured) {
       (async () => {
@@ -1216,16 +1250,49 @@ class InventoryStore {
           if (updates.orderPrice !== undefined) payload.total_price = updates.orderPrice;
           if (updates.status !== undefined) payload.status = updates.status;
           if (updates.note !== undefined) payload.memo = updates.note || null;
-          if (completedAt !== undefined) payload.completed_at = completedAt;
+          if (completedAt !== undefined) payload.completed_at = completedAt || null;
 
-          const { data, error } = await supabase.from('customer_orders').update(payload).eq('id', orderId);
+          const { data, error } = await supabase
+            .from('customer_orders')
+            .update(payload)
+            .eq('id', orderId)
+            .select();
+
           if (error) {
-            console.error('[InventoryStore] Supabase customer_orders UPDATE 실패:', error);
+            console.error('[InventoryStore] Supabase customer_orders 전체 UPDATE 실패:', {
+              orderId,
+              updates,
+              code: error.code,
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+            });
+            // Supabase UPDATE 실패 시 로컬 상태 롤백
+            this.orders = previousOrders;
+            this.saveToStorage();
+            this.notify();
+          } else if (!data || data.length === 0) {
+            console.warn('[InventoryStore] Supabase customer_orders 전체 UPDATE: 수정된 DB 행(row)이 0건입니다.', {
+              orderId,
+              updates,
+              possibleCause: 'Supabase RLS UPDATE 정책 부재(미허용) 또는 DB에 해당 orderId 행이 없음',
+            });
           } else {
-            console.log('[InventoryStore] Supabase customer_orders UPDATE 성공:', orderId, data);
+            console.log('[InventoryStore] Supabase customer_orders 전체 UPDATE 성공:', {
+              orderId,
+              data,
+            });
           }
         } catch (e) {
-          console.error('[InventoryStore] Supabase customer_orders UPDATE 예외 발생:', e);
+          console.error('[InventoryStore] Supabase customer_orders 전체 UPDATE 예외 발생:', {
+            orderId,
+            updates,
+            error: e,
+          });
+          // 예외 발생 시 로컬 상태 롤백
+          this.orders = previousOrders;
+          this.saveToStorage();
+          this.notify();
         }
       })();
     }

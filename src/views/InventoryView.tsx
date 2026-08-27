@@ -158,6 +158,31 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     return order.status === orderFilter;
   });
 
+  // 상태별 표시 우선순위 정렬: 1. 진행중인 건(수령대기) -> 2. 주문접수 -> 3. 입고완료 -> 4. 수령완료 -> 5. 취소됨
+  const getOrderStatusPriority = (status: CustomerOrderStatus | string): number => {
+    switch (status) {
+      case '진행중인 건':
+      case '수령대기':
+        return 1;
+      case '주문접수':
+        return 2;
+      case '입고완료':
+        return 3;
+      case '수령완료':
+        return 4;
+      case '취소됨':
+        return 5;
+      default:
+        return 2;
+    }
+  };
+
+  const sortedOrders = [...filteredOrders].sort((a, b) => {
+    const priorityA = getOrderStatusPriority(a.status);
+    const priorityB = getOrderStatusPriority(b.status);
+    return priorityA - priorityB;
+  });
+
   const sortLabels: Record<InventorySort, string> = {
     updated: '최근 수정순',
     stock_asc: '재고 적은순',
@@ -701,14 +726,14 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e4e2dd] text-sm">
-                {filteredOrders.length === 0 ? (
+                {sortedOrders.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-[#737878]">
                       일치하는 손님 주문 도서가 없습니다.
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((order) => (
+                  sortedOrders.map((order) => (
                     <tr key={order.id} className="hover:bg-[#f5f3ee] transition-colors group">
                       {/* Status */}
                       <td className="py-3.5 px-5 align-middle">
@@ -831,12 +856,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
           {/* Mobile Card List View for Orders */}
           <div className="md:hidden space-y-3">
-            {filteredOrders.length === 0 ? (
+            {sortedOrders.length === 0 ? (
               <div className="py-12 text-center text-[#737878] text-sm bg-white rounded-2xl border border-[#c3c7c7]">
                 일치하는 손님 주문 도서가 없습니다.
               </div>
             ) : (
-              filteredOrders.map((order) => (
+              sortedOrders.map((order) => (
                 <div
                   key={order.id}
                   className="bg-white rounded-2xl p-4 border border-[#c3c7c7] shadow-xs space-y-3"
@@ -938,7 +963,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
           {/* Orders Count Footer */}
           <div className="flex items-center justify-between text-xs text-[#737878] pt-2 px-2">
-            <span>총 {filteredOrders.length}건의 주문 내역 표시 중</span>
+            <span>총 {sortedOrders.length}건의 주문 내역 표시 중</span>
             <span>독립서점 주문 및 예약 관리</span>
           </div>
         </div>

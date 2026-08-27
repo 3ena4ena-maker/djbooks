@@ -80,6 +80,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return true; // 'all'
   });
 
+  // 상태별 표시 우선순위 정렬: 1. 진행중인 건(수령대기) -> 2. 주문접수 -> 3. 입고완료 -> 4. 수령완료 -> 5. 취소됨
+  const getOrderStatusPriority = (status: CustomerOrderStatus | string): number => {
+    switch (status) {
+      case '진행중인 건':
+      case '수령대기':
+        return 1;
+      case '주문접수':
+        return 2;
+      case '입고완료':
+        return 3;
+      case '수령완료':
+        return 4;
+      case '취소됨':
+        return 5;
+      default:
+        return 2;
+    }
+  };
+
+  const sortedOrders = [...filteredOrders].sort((a, b) => {
+    const priorityA = getOrderStatusPriority(a.status);
+    const priorityB = getOrderStatusPriority(b.status);
+    return priorityA - priorityB;
+  });
+
   const formatRelativeTime = (isoString: string) => {
     try {
       const now = new Date();
@@ -423,7 +448,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* Orders Cards List */}
             <div className="space-y-3">
-              {filteredOrders.length === 0 ? (
+              {sortedOrders.length === 0 ? (
                 <div className="bg-[#fbf9f4] border border-[#e9e2d1] rounded-2xl p-8 text-center space-y-3">
                   <div className="w-12 h-12 rounded-full bg-[#f0eee9] text-[#737878] mx-auto flex items-center justify-center">
                     <ClipboardList className="w-6 h-6" />
@@ -448,7 +473,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
                 </div>
               ) : (
-                filteredOrders.map((order) => {
+                sortedOrders.map((order) => {
                   return (
                     <div
                       key={order.id}

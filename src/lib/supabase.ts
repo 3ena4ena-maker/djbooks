@@ -74,8 +74,8 @@ export let supabaseUrl = currentConfig.url;
 export let supabase: SupabaseClient = isSupabaseConfigured
   ? createClient(currentConfig.url, currentConfig.key, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
       },
     })
   : fallbackDummyClient;
@@ -96,8 +96,8 @@ export function reconfigureSupabase(url: string, key: string): { client: Supabas
   if (isSupabaseConfigured) {
     supabase = createClient(currentConfig.url, currentConfig.key, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
       },
     });
   } else {

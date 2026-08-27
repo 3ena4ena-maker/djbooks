@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ViewType, BookWithStock, CustomerOrder, CustomerOrderStatus } from '../types';
+import { ViewType, CustomerOrder, CustomerOrderStatus } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
+import { authStore } from '../services/authStore';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
 import { CustomerOrderModal } from '../components/modals/CustomerOrderModal';
@@ -48,16 +49,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onShowToast,
 }) => {
   const [, setTick] = useState(0);
+  const [isAdmin, setIsAdmin] = useState(authStore.isAdmin);
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'arrived' | 'completed'>('pending');
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<CustomerOrder | null>(null);
   const [orderToDelete, setOrderToDelete] = useState<CustomerOrder | null>(null);
 
   useEffect(() => {
-    const unsubscribe = inventoryStore.subscribe(() => {
+    const unsubStore = inventoryStore.subscribe(() => {
       setTick((t) => t + 1);
     });
-    return unsubscribe;
+    const unsubAuth = authStore.subscribe(() => {
+      setIsAdmin(authStore.isAdmin);
+    });
+    return () => {
+      unsubStore();
+      unsubAuth();
+    };
   }, []);
 
   const settings = inventoryStore.getSettings();
@@ -190,7 +198,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <span className="text-xs font-bold text-[#434848] bg-[#f0eee9] px-2.5 py-1 rounded-full border border-[#c3c7c7]">
             📍 {settings.branchName || '본점'}
           </span>
-          <span className="text-xs text-[#737878]">독립서점 재고 및 손님 주문 관리 시스템</span>
+          <span
+            onClick={() => {
+              const activated = authStore.handleTripleClickTrigger();
+              if (activated && onShowToast) {
+                onShowToast('🎉 관리자 모드가 활성화되었습니다.');
+              }
+            }}
+            className="text-xs text-[#737878] cursor-pointer hover:text-[#171e1e] transition-colors select-none"
+            title="독립서점"
+          >
+            독립서점 재고 및 손님 주문 관리 시스템
+          </span>
         </div>
         <h2 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#171e1e] mb-2 tracking-tight">
           {settings.storeName ? `${settings.storeName} 대시보드` : '독자서점 대시보드'}
@@ -309,7 +328,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               빠른 작업
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className={`grid grid-cols-1 ${isAdmin ? 'sm:grid-cols-3' : 'sm:grid-cols-1'} gap-3`}>
               {/* Scan Action */}
               <button
                 onClick={() => onNavigate('scanner')}
@@ -326,36 +345,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </button>
 
-              {/* Add Book */}
-              <button
-                onClick={onOpenAddBook}
-                className="bg-[#f0eee9] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 border border-[#e9e2d1] hover:bg-[#eae8e3] hover:border-[#171e1e] transition-all cursor-pointer shadow-xs active:scale-95 text-center"
-              >
-                <div className="bg-[#ffffff] rounded-full p-2.5 shadow-xs border border-[#c3c7c7]">
-                  <PlusCircle className="w-5 h-5 text-[#171e1e]" />
-                </div>
-                <span className="text-sm font-bold text-[#171e1e]">
-                  새 도서 등록
-                </span>
-                <span className="text-[11px] text-[#737878]">표지 촬영 및 등록</span>
-              </button>
+              {isAdmin && (
+                <>
+                  {/* Add Book */}
+                  <button
+                    onClick={onOpenAddBook}
+                    className="bg-[#f0eee9] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 border border-[#e9e2d1] hover:bg-[#eae8e3] hover:border-[#171e1e] transition-all cursor-pointer shadow-xs active:scale-95 text-center"
+                  >
+                    <div className="bg-[#ffffff] rounded-full p-2.5 shadow-xs border border-[#c3c7c7]">
+                      <PlusCircle className="w-5 h-5 text-[#171e1e]" />
+                    </div>
+                    <span className="text-sm font-bold text-[#171e1e]">
+                      새 도서 등록
+                    </span>
+                    <span className="text-[11px] text-[#737878]">표지 촬영 및 등록</span>
+                  </button>
 
-              {/* Add Customer Order */}
-              <button
-                onClick={() => {
-                  setEditingOrder(null);
-                  setIsOrderModalOpen(true);
-                }}
-                className="bg-[#f0eee9] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 border border-[#e9e2d1] hover:bg-[#eae8e3] hover:border-[#171e1e] transition-all cursor-pointer shadow-xs active:scale-95 text-center group"
-              >
-                <div className="bg-[#ffffff] rounded-full p-2.5 shadow-xs border border-[#c3c7c7] group-hover:border-[#171e1e]">
-                  <ClipboardList className="w-5 h-5 text-[#3c4c20]" />
-                </div>
-                <span className="text-sm font-bold text-[#171e1e]">
-                  손님 주문 접수
-                </span>
-                <span className="text-[11px] text-[#737878]">예약 도서 기록</span>
-              </button>
+                  {/* Add Customer Order */}
+                  <button
+                    onClick={() => {
+                      setEditingOrder(null);
+                      setIsOrderModalOpen(true);
+                    }}
+                    className="bg-[#f0eee9] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 border border-[#e9e2d1] hover:bg-[#eae8e3] hover:border-[#171e1e] transition-all cursor-pointer shadow-xs active:scale-95 text-center group"
+                  >
+                    <div className="bg-[#ffffff] rounded-full p-2.5 shadow-xs border border-[#c3c7c7] group-hover:border-[#171e1e]">
+                      <ClipboardList className="w-5 h-5 text-[#3c4c20]" />
+                    </div>
+                    <span className="text-sm font-bold text-[#171e1e]">
+                      손님 주문 접수
+                    </span>
+                    <span className="text-[11px] text-[#737878]">예약 도서 기록</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -414,17 +437,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
                 </div>
 
-                {/* Add Order Button */}
-                <button
-                  onClick={() => {
-                    setEditingOrder(null);
-                    setIsOrderModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 bg-[#171e1e] text-white rounded-xl text-xs font-bold hover:bg-[#2c3333] transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 flex-shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>주문 등록</span>
-                </button>
+                {/* Add Order Button (관리자 전용) */}
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setEditingOrder(null);
+                      setIsOrderModalOpen(true);
+                    }}
+                    className="px-3 py-1.5 bg-[#171e1e] text-white rounded-xl text-xs font-bold hover:bg-[#2c3333] transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 flex-shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>주문 등록</span>
+                  </button>
+                )}
 
                 {/* Go to full Orders View */}
                 <button
@@ -432,7 +457,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   title="주문건 전체 관리 페이지로 이동"
                   className="px-2.5 py-1.5 bg-white border border-[#c3c7c7] text-[#171e1e] rounded-xl text-xs font-bold hover:bg-[#f0eee9] transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 flex-shrink-0"
                 >
-                  <span>전체 관리</span>
+                  <span>전체 목록</span>
                   <ChevronRight className="w-3.5 h-3.5 text-[#737878]" />
                 </button>
               </div>
@@ -453,16 +478,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       손님이 원하는 독립출판물이나 절판/주문 도서를 등록하여 관리해보세요.
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setEditingOrder(null);
-                      setIsOrderModalOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-[#c3c7c7] hover:border-[#171e1e] text-[#171e1e] rounded-xl text-xs font-bold shadow-xs cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>첫 주문 등록하기</span>
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        setEditingOrder(null);
+                        setIsOrderModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-[#c3c7c7] hover:border-[#171e1e] text-[#171e1e] rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>첫 주문 등록하기</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 sortedOrders.map((order) => {
@@ -504,26 +531,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           </p>
                         </div>
 
-                        {/* Edit / Delete Buttons */}
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            onClick={() => {
-                              setEditingOrder(order);
-                              setIsOrderModalOpen(true);
-                            }}
-                            title="주문 정보 수정"
-                            className="p-1.5 text-[#737878] hover:text-[#171e1e] hover:bg-[#f0eee9] rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setOrderToDelete(order)}
-                            title="주문 삭제"
-                            className="p-1.5 text-[#737878] hover:text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {/* Edit / Delete Buttons (관리자 전용) */}
+                        {isAdmin && (
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              onClick={() => {
+                                setEditingOrder(order);
+                                setIsOrderModalOpen(true);
+                              }}
+                              title="주문 정보 수정"
+                              className="p-1.5 text-[#737878] hover:text-[#171e1e] hover:bg-[#f0eee9] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setOrderToDelete(order)}
+                              title="주문 삭제"
+                              className="p-1.5 text-[#737878] hover:text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Middle: Customer Details & Note */}
@@ -547,45 +576,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         )}
                       </div>
 
-                      {/* Bottom Quick State Transition Bar */}
-                      <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9] flex-wrap gap-2 text-xs">
-                        <span className="text-[11px] text-[#737878]">빠른 상태 변경:</span>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {order.status !== '주문접수' && (
-                            <button
-                              onClick={(e) => handleQuickStatusChange(e, order, '주문접수')}
-                              className="px-2.5 py-1 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-lg text-[11px] text-[#434848] font-semibold cursor-pointer"
-                            >
-                              주문접수
-                            </button>
-                          )}
-                          {order.status !== '입고완료' && (
-                            <button
-                              onClick={(e) => handleQuickStatusChange(e, order, '입고완료')}
-                              className="px-2.5 py-1 bg-[#e8f5e9] border border-[#a5d6a7] hover:bg-[#c8e6c9] text-[#2e7d32] rounded-lg text-[11px] font-bold cursor-pointer"
-                            >
-                              📦 입고완료
-                            </button>
-                          )}
-                          {order.status !== '수령대기' && (
-                            <button
-                              onClick={(e) => handleQuickStatusChange(e, order, '수령대기')}
-                              className="px-2.5 py-1 bg-[#e3f2fd] border border-[#90caf9] hover:bg-[#bbdefb] text-[#1565c0] rounded-lg text-[11px] font-bold cursor-pointer"
-                            >
-                              🔔 수령대기
-                            </button>
-                          )}
-                          {order.status !== '수령완료' && (
-                            <button
-                              onClick={(e) => handleQuickStatusChange(e, order, '수령완료')}
-                              className="px-2.5 py-1 bg-[#171e1e] text-white hover:bg-[#2c3333] rounded-lg text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs"
-                            >
-                              <Check className="w-3 h-3" />
-                              수령완료 처리
-                            </button>
-                          )}
+                      {/* Bottom Quick State Transition Bar (관리자 전용) */}
+                      {isAdmin && (
+                        <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9] flex-wrap gap-2 text-xs">
+                          <span className="text-[11px] text-[#737878]">빠른 상태 변경:</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {order.status !== '주문접수' && (
+                              <button
+                                onClick={(e) => handleQuickStatusChange(e, order, '주문접수')}
+                                className="px-2.5 py-1 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-lg text-[11px] text-[#434848] font-semibold cursor-pointer"
+                              >
+                                주문접수
+                              </button>
+                            )}
+                            {order.status !== '입고완료' && (
+                              <button
+                                onClick={(e) => handleQuickStatusChange(e, order, '입고완료')}
+                                className="px-2.5 py-1 bg-[#e8f5e9] border border-[#a5d6a7] hover:bg-[#c8e6c9] text-[#2e7d32] rounded-lg text-[11px] font-bold cursor-pointer"
+                              >
+                                📦 입고완료
+                              </button>
+                            )}
+                            {order.status !== '수령대기' && (
+                              <button
+                                onClick={(e) => handleQuickStatusChange(e, order, '수령대기')}
+                                className="px-2.5 py-1 bg-[#e3f2fd] border border-[#90caf9] hover:bg-[#bbdefb] text-[#1565c0] rounded-lg text-[11px] font-bold cursor-pointer"
+                              >
+                                🔔 수령대기
+                              </button>
+                            )}
+                            {order.status !== '수령완료' && (
+                              <button
+                                onClick={(e) => handleQuickStatusChange(e, order, '수령완료')}
+                                className="px-2.5 py-1 bg-[#171e1e] text-white hover:bg-[#2c3333] rounded-lg text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs"
+                              >
+                                <Check className="w-3 h-3" />
+                                수령완료 처리
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })

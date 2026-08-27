@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BookWithStock, Book } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
+import { authStore } from '../services/authStore';
 import { feedback } from '../utils/feedback';
 import { BookCover } from '../components/common/BookCover';
 import {
@@ -52,6 +53,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [newBookStock, setNewBookStock] = useState<number>(1);
   const [newBookEntryType, setNewBookEntryType] = useState<'초기 도서 입고' | '재입고'>('초기 도서 입고');
   const [isLoadingMetadata, setIsLoadingMetadata] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(authStore.isAdmin);
 
   const qrReaderRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -300,8 +302,13 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     isMountedRef.current = true;
     startScanner();
 
+    const unsubAuth = authStore.subscribe(() => {
+      setIsAdmin(authStore.isAdmin);
+    });
+
     return () => {
       isMountedRef.current = false;
+      unsubAuth();
       stopScanner();
     };
   }, [facingMode]);
@@ -693,32 +700,38 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 </div>
               </div>
 
-              {/* Rapid Action Buttons [-1 판매] & [+1 입고] */}
-              <div className="grid grid-cols-2 gap-3.5">
-                {/* Sell Button */}
-                <button
-                  onClick={() => handleQuickSell(matchedBook)}
-                  className="flex flex-col items-center justify-center py-4 px-2 rounded-2xl bg-[#eae8e3] hover:bg-[#e4e2dd] border-b-4 border-[#ba1a1a]/30 active:border-b-0 active:translate-y-1 transition-all cursor-pointer shadow-xs"
-                >
-                  <MinusCircle className="w-7 h-7 text-[#ba1a1a] mb-1" />
-                  <span className="font-['Public_Sans','Noto_Sans_KR',sans-serif] font-bold text-sm text-[#171e1e]">
-                    [-1 판매]
-                  </span>
-                  <span className="text-[10px] text-[#737878] mt-0.5">재고 1권 차감</span>
-                </button>
+              {/* Rapid Action Buttons [-1 판매] & [+1 입고] (관리자 전용) */}
+              {isAdmin ? (
+                <div className="grid grid-cols-2 gap-3.5">
+                  {/* Sell Button */}
+                  <button
+                    onClick={() => handleQuickSell(matchedBook)}
+                    className="flex flex-col items-center justify-center py-4 px-2 rounded-2xl bg-[#eae8e3] hover:bg-[#e4e2dd] border-b-4 border-[#ba1a1a]/30 active:border-b-0 active:translate-y-1 transition-all cursor-pointer shadow-xs"
+                  >
+                    <MinusCircle className="w-7 h-7 text-[#ba1a1a] mb-1" />
+                    <span className="font-['Public_Sans','Noto_Sans_KR',sans-serif] font-bold text-sm text-[#171e1e]">
+                      [-1 판매]
+                    </span>
+                    <span className="text-[10px] text-[#737878] mt-0.5">재고 1권 차감</span>
+                  </button>
 
-                {/* Restock Button */}
-                <button
-                  onClick={() => handleQuickRestock(matchedBook)}
-                  className="flex flex-col items-center justify-center py-4 px-2 rounded-2xl bg-[#d6eaaf] hover:bg-[#bbce95] border-b-4 border-[#3c4c20]/30 active:border-b-0 active:translate-y-1 transition-all cursor-pointer shadow-xs"
-                >
-                  <PlusCircle className="w-7 h-7 text-[#3c4c20] mb-1" />
-                  <span className="font-['Public_Sans','Noto_Sans_KR',sans-serif] font-bold text-sm text-[#142000]">
-                    [+1 입고]
-                  </span>
-                  <span className="text-[10px] text-[#3c4c20] mt-0.5">재고 1권 추가</span>
-                </button>
-              </div>
+                  {/* Restock Button */}
+                  <button
+                    onClick={() => handleQuickRestock(matchedBook)}
+                    className="flex flex-col items-center justify-center py-4 px-2 rounded-2xl bg-[#d6eaaf] hover:bg-[#bbce95] border-b-4 border-[#3c4c20]/30 active:border-b-0 active:translate-y-1 transition-all cursor-pointer shadow-xs"
+                  >
+                    <PlusCircle className="w-7 h-7 text-[#3c4c20] mb-1" />
+                    <span className="font-['Public_Sans','Noto_Sans_KR',sans-serif] font-bold text-sm text-[#142000]">
+                      [+1 입고]
+                    </span>
+                    <span className="text-[10px] text-[#3c4c20] mt-0.5">재고 1권 추가</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 bg-[#f5f3ee] border border-[#c3c7c7] rounded-2xl text-xs text-[#737878] text-center">
+                  💡 입고 및 판매 처리, 재고 변경은 관리자 로그인 후 이용 가능합니다.
+                </div>
+              )}
 
               {/* Bottom Flow Buttons */}
               <div className="flex flex-col gap-2 pt-1">
@@ -899,19 +912,25 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
                   {/* Register Action Button */}
                   <div className="flex flex-col gap-2 pt-1">
-                    <button
-                      onClick={handleRegisterNewBook}
-                      className="w-full py-4 bg-[#171e1e] text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#2c3333] shadow-sm cursor-pointer active:scale-[0.98] transition-all"
-                    >
-                      <BookPlus className="w-5 h-5 text-[#d6eaaf]" />
-                      <span>{newBookEntryType} (+{newBookStock}권)</span>
-                    </button>
+                    {isAdmin ? (
+                      <button
+                        onClick={handleRegisterNewBook}
+                        className="w-full py-4 bg-[#171e1e] text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#2c3333] shadow-sm cursor-pointer active:scale-[0.98] transition-all"
+                      >
+                        <BookPlus className="w-5 h-5 text-[#d6eaaf]" />
+                        <span>{newBookEntryType} (+{newBookStock}권)</span>
+                      </button>
+                    ) : (
+                      <div className="p-3.5 bg-[#f5f3ee] border border-[#c3c7c7] rounded-2xl text-xs text-[#737878] text-center font-medium">
+                        💡 새로운 도서 등록은 관리자 모드에서 가능합니다.
+                      </div>
+                    )}
 
                     <button
                       onClick={handleNextScan}
                       className="w-full py-2.5 text-xs text-[#737878] hover:text-[#171e1e] cursor-pointer"
                     >
-                      등록 취소하고 다음 책 스캔
+                      {isAdmin ? '등록 취소하고 다음 책 스캔' : '다음 책 스캔'}
                     </button>
                   </div>
                 </div>

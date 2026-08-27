@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BookWithStock, InventoryFilter, InventorySort, CustomerOrder, CustomerOrderStatus, ViewType } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
+import { authStore } from '../services/authStore';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
 import { EditBookModal } from '../components/modals/EditBookModal';
@@ -55,6 +56,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   onNavigate,
 }) => {
   const [, setTick] = useState(0);
+  const [isAdmin, setIsAdmin] = useState(authStore.isAdmin);
   const [activeTab, setActiveTab] = useState<MainTabType>(initialTab);
 
   // Synchronize active tab with initialTab prop when URL/route changes
@@ -78,10 +80,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [orderToDelete, setOrderToDelete] = useState<CustomerOrder | null>(null);
 
   useEffect(() => {
-    const unsubscribe = inventoryStore.subscribe(() => {
+    const unsubStore = inventoryStore.subscribe(() => {
       setTick((t) => t + 1);
     });
-    return unsubscribe;
+    const unsubAuth = authStore.subscribe(() => {
+      setIsAdmin(authStore.isAdmin);
+    });
+    return () => {
+      unsubStore();
+      unsubAuth();
+    };
   }, []);
 
   const settings = inventoryStore.getSettings();
@@ -328,28 +336,30 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         </div>
 
         {/* Action Button depending on active tab */}
-        <div className="flex items-center gap-2">
-          {activeTab === 'books' ? (
-            <button
-              onClick={onOpenAddBook}
-              className="bg-[#171e1e] text-white text-xs md:text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>도서 등록</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                setEditingOrder(null);
-                setIsOrderModalOpen(true);
-              }}
-              className="bg-[#171e1e] text-white text-xs md:text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>손님 주문 접수</span>
-            </button>
-          )}
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            {activeTab === 'books' ? (
+              <button
+                onClick={onOpenAddBook}
+                className="bg-[#171e1e] text-white text-xs md:text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>도서 등록</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setEditingOrder(null);
+                  setIsOrderModalOpen(true);
+                }}
+                className="bg-[#171e1e] text-white text-xs md:text-sm font-semibold py-2.5 px-4 rounded-xl hover:bg-[#2c3333] transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>손님 주문 접수</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main Top Navigation Tabs: [ 📦 재고관리 ] vs [ 🛒 주문건 ] */}
@@ -483,13 +493,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <th className="py-3.5 px-5">현재 재고</th>
                   <th className="py-3.5 px-5 text-right">판매가</th>
                   <th className="py-3.5 px-5 text-right">최근 수정일</th>
-                  <th className="py-3.5 px-5 text-center w-28">빠른 변동 / 관리</th>
+                  {isAdmin && <th className="py-3.5 px-5 text-center w-28">빠른 변동 / 관리</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e4e2dd] text-sm">
                 {sortedBooks.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-[#737878]">
+                    <td colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-[#737878]">
                       일치하는 도서가 없습니다.
                     </td>
                   </tr>
@@ -539,42 +549,44 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                         {formatDate(book.updatedAt)}
                       </td>
 
-                      {/* Quick delta buttons, Edit & Delete Button */}
-                      <td className="py-3.5 px-5 align-middle text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            title="1권 판매"
-                            onClick={(e) => handleQuickMinus(e, book)}
-                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] transition-colors cursor-pointer"
-                          >
-                            <MinusCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            title="1권 입고"
-                            onClick={(e) => handleQuickAdd(e, book)}
-                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#d6eaaf] text-[#3c4c20] transition-colors cursor-pointer"
-                          >
-                            <PlusCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            title="도서 정보 및 표지 수정"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setBookToEdit(book);
-                            }}
-                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] transition-colors cursor-pointer"
-                          >
-                            <FileEdit className="w-4 h-4" />
-                          </button>
-                          <button
-                            title="도서 삭제"
-                            onClick={(e) => handleOpenDeleteConfirm(e, book)}
-                            className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] opacity-70 hover:opacity-100 transition-all cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+                      {/* Quick delta buttons, Edit & Delete Button (관리자 전용) */}
+                      {isAdmin && (
+                        <td className="py-3.5 px-5 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              title="1권 판매"
+                              onClick={(e) => handleQuickMinus(e, book)}
+                              className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] transition-colors cursor-pointer"
+                            >
+                              <MinusCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              title="1권 입고"
+                              onClick={(e) => handleQuickAdd(e, book)}
+                              className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#d6eaaf] text-[#3c4c20] transition-colors cursor-pointer"
+                            >
+                              <PlusCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              title="도서 정보 및 표지 수정"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setBookToEdit(book);
+                              }}
+                              className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] transition-colors cursor-pointer"
+                            >
+                              <FileEdit className="w-4 h-4" />
+                            </button>
+                            <button
+                              title="도서 삭제"
+                              onClick={(e) => handleOpenDeleteConfirm(e, book)}
+                              className="p-1.5 rounded-lg bg-[#f0eee9] hover:bg-[#ffdad6] text-[#ba1a1a] opacity-70 hover:opacity-100 transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -616,43 +628,51 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Mobile Quick +/- Bar & Delete Button */}
-                  <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9]" onClick={(e) => e.stopPropagation()}>
-                    <span className="text-[11px] text-[#737878] font-mono">
-                      ISBN {book.isbn}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={(e) => handleQuickMinus(e, book)}
-                        className="px-2.5 py-1 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        -1 판매
-                      </button>
-                      <button
-                        onClick={(e) => handleQuickAdd(e, book)}
-                        className="px-2.5 py-1 bg-[#f5f3ee] text-[#3c4c20] hover:bg-[#d6eaaf] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        +1 입고
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setBookToEdit(book);
-                        }}
-                        title="도서 정보 및 표지 수정"
-                        className="p-1.5 bg-[#f5f3ee] text-[#171e1e] hover:bg-[#eae8e3] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
-                      >
-                        <FileEdit className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => handleOpenDeleteConfirm(e, book)}
-                        title="도서 삭제"
-                        className="p-1.5 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                  {/* Mobile Quick +/- Bar & Delete Button (관리자 전용) */}
+                  {isAdmin ? (
+                    <div className="flex items-center justify-between pt-1 border-t border-[#f0eee9]" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-[11px] text-[#737878] font-mono">
+                        ISBN {book.isbn}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => handleQuickMinus(e, book)}
+                          className="px-2.5 py-1 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          -1 판매
+                        </button>
+                        <button
+                          onClick={(e) => handleQuickAdd(e, book)}
+                          className="px-2.5 py-1 bg-[#f5f3ee] text-[#3c4c20] hover:bg-[#d6eaaf] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          +1 입고
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBookToEdit(book);
+                          }}
+                          title="도서 정보 및 표지 수정"
+                          className="p-1.5 bg-[#f5f3ee] text-[#171e1e] hover:bg-[#eae8e3] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
+                        >
+                          <FileEdit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => handleOpenDeleteConfirm(e, book)}
+                          title="도서 삭제"
+                          className="p-1.5 bg-[#f5f3ee] text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg text-xs font-bold flex items-center justify-center cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="pt-1 border-t border-[#f0eee9]">
+                      <span className="text-[11px] text-[#737878] font-mono">
+                        ISBN {book.isbn}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -722,13 +742,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <th className="py-3.5 px-5">주문 손님 / 연락처</th>
                   <th className="py-3.5 px-5 text-center">수량 / 금액</th>
                   <th className="py-3.5 px-5">주문일 / 특이사항</th>
-                  <th className="py-3.5 px-5 text-center w-40">진행 상태 변경 / 관리</th>
+                  {isAdmin && <th className="py-3.5 px-5 text-center w-40">진행 상태 변경 / 관리</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e4e2dd] text-sm">
                 {sortedOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-[#737878]">
+                    <td colSpan={isAdmin ? 6 : 5} className="py-12 text-center text-[#737878]">
                       일치하는 손님 주문 도서가 없습니다.
                     </td>
                   </tr>
@@ -794,59 +814,61 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                         ) : null}
                       </td>
 
-                      {/* Quick Status Action & Edit/Delete */}
-                      <td className="py-3.5 px-5 align-middle text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {/* Next Stage Button */}
-                          {order.status === '주문접수' && (
-                            <button
-                              onClick={(e) => handleQuickOrderStatusChange(e, order, '입고완료')}
-                              className="px-2 py-1 bg-[#e8f5e9] border border-[#a5d6a7] text-[#2e7d32] rounded-lg text-xs font-bold hover:bg-[#c8e6c9] cursor-pointer"
-                            >
-                              📦 입고완료
-                            </button>
-                          )}
-                          {order.status === '입고완료' && (
-                            <button
-                              onClick={(e) => handleQuickOrderStatusChange(e, order, '수령대기')}
-                              className="px-2 py-1 bg-[#e3f2fd] border border-[#90caf9] text-[#1565c0] rounded-lg text-xs font-bold hover:bg-[#bbdefb] cursor-pointer"
-                            >
-                              🔔 수령대기
-                            </button>
-                          )}
-                          {order.status === '수령대기' && (
-                            <button
-                              onClick={(e) => handleQuickOrderStatusChange(e, order, '수령완료')}
-                              className="px-2 py-1 bg-[#171e1e] text-white rounded-lg text-xs font-bold hover:bg-[#2c3333] cursor-pointer flex items-center gap-0.5"
-                            >
-                              <Check className="w-3 h-3" />
-                              수령완료
-                            </button>
-                          )}
-                          {order.status === '수령완료' && (
-                            <span className="text-xs text-[#737878] font-medium px-2 py-1">완료됨</span>
-                          )}
+                      {/* Quick Status Action & Edit/Delete (관리자 전용) */}
+                      {isAdmin && (
+                        <td className="py-3.5 px-5 align-middle text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Next Stage Button */}
+                            {order.status === '주문접수' && (
+                              <button
+                                onClick={(e) => handleQuickOrderStatusChange(e, order, '입고완료')}
+                                className="px-2 py-1 bg-[#e8f5e9] border border-[#a5d6a7] text-[#2e7d32] rounded-lg text-xs font-bold hover:bg-[#c8e6c9] cursor-pointer"
+                              >
+                                📦 입고완료
+                              </button>
+                            )}
+                            {order.status === '입고완료' && (
+                              <button
+                                onClick={(e) => handleQuickOrderStatusChange(e, order, '수령대기')}
+                                className="px-2 py-1 bg-[#e3f2fd] border border-[#90caf9] text-[#1565c0] rounded-lg text-xs font-bold hover:bg-[#bbdefb] cursor-pointer"
+                              >
+                                🔔 수령대기
+                              </button>
+                            )}
+                            {order.status === '수령대기' && (
+                              <button
+                                onClick={(e) => handleQuickOrderStatusChange(e, order, '수령완료')}
+                                className="px-2 py-1 bg-[#171e1e] text-white rounded-lg text-xs font-bold hover:bg-[#2c3333] cursor-pointer flex items-center gap-0.5"
+                              >
+                                <Check className="w-3 h-3" />
+                                수령완료
+                              </button>
+                            )}
+                            {order.status === '수령완료' && (
+                              <span className="text-xs text-[#737878] font-medium px-2 py-1">완료됨</span>
+                            )}
 
-                          {/* Edit / Delete */}
-                          <button
-                            onClick={() => {
-                              setEditingOrder(order);
-                              setIsOrderModalOpen(true);
-                            }}
-                            title="주문 정보 수정"
-                            className="p-1.5 text-[#737878] hover:text-[#171e1e] hover:bg-[#eae8e3] rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setOrderToDelete(order)}
-                            title="주문 삭제"
-                            className="p-1.5 text-[#737878] hover:text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
+                            {/* Edit / Delete */}
+                            <button
+                              onClick={() => {
+                                setEditingOrder(order);
+                                setIsOrderModalOpen(true);
+                              }}
+                              title="주문 정보 수정"
+                              className="p-1.5 text-[#737878] hover:text-[#171e1e] hover:bg-[#eae8e3] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setOrderToDelete(order)}
+                              title="주문 삭제"
+                              className="p-1.5 text-[#737878] hover:text-[#ba1a1a] hover:bg-[#ffdad6] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -871,23 +893,25 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       {getOrderStatusBadge(order.status)}
                       <span className="text-[11px] text-[#737878] font-mono">{order.orderDate}</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingOrder(order);
-                          setIsOrderModalOpen(true);
-                        }}
-                        className="p-1 text-[#737878] hover:text-[#171e1e] rounded-lg cursor-pointer"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setOrderToDelete(order)}
-                        className="p-1 text-[#737878] hover:text-[#ba1a1a] rounded-lg cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingOrder(order);
+                            setIsOrderModalOpen(true);
+                          }}
+                          className="p-1 text-[#737878] hover:text-[#171e1e] rounded-lg cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setOrderToDelete(order)}
+                          className="p-1 text-[#737878] hover:text-[#ba1a1a] rounded-lg cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -928,33 +952,35 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {order.status !== '입고완료' && order.status !== '수령완료' && (
-                        <button
-                          onClick={(e) => handleQuickOrderStatusChange(e, order, '입고완료')}
-                          className="px-2.5 py-1 bg-[#e8f5e9] border border-[#a5d6a7] text-[#2e7d32] rounded-lg text-xs font-bold"
-                        >
-                          📦 입고완료
-                        </button>
-                      )}
-                      {order.status !== '수령대기' && order.status !== '수령완료' && (
-                        <button
-                          onClick={(e) => handleQuickOrderStatusChange(e, order, '수령대기')}
-                          className="px-2.5 py-1 bg-[#e3f2fd] border border-[#90caf9] text-[#1565c0] rounded-lg text-xs font-bold"
-                        >
-                          🔔 수령대기
-                        </button>
-                      )}
-                      {order.status !== '수령완료' && (
-                        <button
-                          onClick={(e) => handleQuickOrderStatusChange(e, order, '수령완료')}
-                          className="px-2.5 py-1 bg-[#171e1e] text-white rounded-lg text-xs font-bold flex items-center gap-1"
-                        >
-                          <Check className="w-3 h-3" />
-                          수령완료
-                        </button>
-                      )}
-                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1.5">
+                        {order.status !== '입고완료' && order.status !== '수령완료' && (
+                          <button
+                            onClick={(e) => handleQuickOrderStatusChange(e, order, '입고완료')}
+                            className="px-2.5 py-1 bg-[#e8f5e9] border border-[#a5d6a7] text-[#2e7d32] rounded-lg text-xs font-bold"
+                          >
+                            📦 입고완료
+                          </button>
+                        )}
+                        {order.status !== '수령대기' && order.status !== '수령완료' && (
+                          <button
+                            onClick={(e) => handleQuickOrderStatusChange(e, order, '수령대기')}
+                            className="px-2.5 py-1 bg-[#e3f2fd] border border-[#90caf9] text-[#1565c0] rounded-lg text-xs font-bold"
+                          >
+                            🔔 수령대기
+                          </button>
+                        )}
+                        {order.status !== '수령완료' && (
+                          <button
+                            onClick={(e) => handleQuickOrderStatusChange(e, order, '수령완료')}
+                            className="px-2.5 py-1 bg-[#171e1e] text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3" />
+                            수령완료
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))

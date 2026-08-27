@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ViewType } from '../../types';
 import { LayoutDashboard, BookOpen, ScanLine, History, Settings } from 'lucide-react';
+import { authStore } from '../../services/authStore';
 
 interface BottomNavigationProps {
   currentView: ViewType;
@@ -11,7 +12,16 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   currentView,
   onNavigate,
 }) => {
-  const items: { id: ViewType; label: string; icon: React.ReactNode }[] = [
+  const [isAdmin, setIsAdmin] = useState(authStore.isAdmin);
+
+  useEffect(() => {
+    const unsubscribe = authStore.subscribe(() => {
+      setIsAdmin(authStore.isAdmin);
+    });
+    return unsubscribe;
+  }, []);
+
+  const items: { id: ViewType; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
     {
       id: 'dashboard',
       label: '홈',
@@ -31,18 +41,22 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
       id: 'history',
       label: '기록',
       icon: <History className="w-5 h-5" />,
+      adminOnly: true,
     },
     {
       id: 'settings',
       label: '설정',
       icon: <Settings className="w-5 h-5" />,
+      adminOnly: true,
     },
   ];
+
+  const visibleItems = items.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden shadow-[0_-4px_16px_rgba(0,0,0,0.06)] border-t border-[#c3c7c7] bg-[#f0eee9] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 select-none">
       <div className="flex justify-around items-center px-2">
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const isActive =
             currentView === item.id ||
             ((currentView === 'detail' || currentView === 'orders') && item.id === 'inventory');

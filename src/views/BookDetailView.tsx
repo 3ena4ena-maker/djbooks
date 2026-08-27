@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BookWithStock, ViewType } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
+import { authStore } from '../services/authStore';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
 import { StockAdjustModal } from '../components/modals/StockAdjustModal';
@@ -43,13 +44,20 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   const [modalMode, setModalMode] = useState<'adjust' | 'restock' | 'sell' | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(authStore.isAdmin);
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    const unsubscribe = inventoryStore.subscribe(() => {
+    const unsubStore = inventoryStore.subscribe(() => {
       setTick((t) => t + 1);
     });
-    return unsubscribe;
+    const unsubAuth = authStore.subscribe(() => {
+      setIsAdmin(authStore.isAdmin);
+    });
+    return () => {
+      unsubStore();
+      unsubAuth();
+    };
   }, []);
 
   const book = inventoryStore.getBookById(bookId);
@@ -112,13 +120,15 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           <span className="text-[#171e1e] font-semibold">{book.category || '소설'}</span>
         </div>
 
-        <button
-          onClick={() => setIsEditModalOpen(true)}
-          className="px-3.5 py-1.5 bg-[#ffffff] hover:bg-[#f5f3ee] border border-[#c3c7c7] text-[#171e1e] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
-        >
-          <FileEdit className="w-3.5 h-3.5 text-[#171e1e]" />
-          <span>도서 정보 수정</span>
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setIsEditModalOpen(true)}
+            className="px-3.5 py-1.5 bg-[#ffffff] hover:bg-[#f5f3ee] border border-[#c3c7c7] text-[#171e1e] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+          >
+            <FileEdit className="w-3.5 h-3.5 text-[#171e1e]" />
+            <span>도서 정보 수정</span>
+          </button>
+        )}
       </div>
 
       {/* Main Grid: Left Column Cover + Actions, Right Column Metadata & Timeline */}
@@ -128,9 +138,11 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           {/* Book Cover Card */}
           <div className="bg-[#ffffff] rounded-2xl p-5 border border-[#c3c7c7] shadow-sm relative overflow-hidden group">
             <div
-              onClick={() => setIsEditModalOpen(true)}
-              className="aspect-[2/3] w-full relative rounded-xl overflow-hidden border border-[#c3c7c7] shadow-[inset_4px_0_10px_rgba(0,0,0,0.12)] bg-[#f0eee9] cursor-pointer"
-              title="클릭하여 도서 표지 및 정보 수정"
+              onClick={() => isAdmin && setIsEditModalOpen(true)}
+              className={`aspect-[2/3] w-full relative rounded-xl overflow-hidden border border-[#c3c7c7] shadow-[inset_4px_0_10px_rgba(0,0,0,0.12)] bg-[#f0eee9] ${
+                isAdmin ? 'cursor-pointer' : ''
+              }`}
+              title={isAdmin ? '클릭하여 도서 표지 및 정보 수정' : undefined}
             >
               <img
                 src={book.coverImage}
@@ -139,15 +151,17 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                 referrerPolicy="no-referrer"
               />
 
-              {/* Hover overlay to directly edit cover image */}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 text-white p-4 text-center">
-                <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-xs flex items-center justify-center">
-                  <UploadCloud className="w-5 h-5 text-white" />
+              {/* Hover overlay to directly edit cover image (관리자 전용) */}
+              {isAdmin && (
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 text-white p-4 text-center">
+                  <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-xs flex items-center justify-center">
+                    <UploadCloud className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="text-xs font-bold bg-black/60 px-3 py-1 rounded-full">
+                    표지 직접 변경 / 수정
+                  </span>
                 </div>
-                <span className="text-xs font-bold bg-black/60 px-3 py-1 rounded-full">
-                  표지 직접 변경 / 수정
-                </span>
-              </div>
+              )}
             </div>
 
             {/* Status Badge Overlay */}
@@ -156,54 +170,56 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             </div>
           </div>
 
-          {/* Primary Action Buttons */}
-          <div className="flex flex-col gap-3 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
-            {/* [+ 입고 처리] */}
-            <button
-              onClick={handleQuickRestock}
-              className="bg-[#171e1e] text-white py-4 px-6 rounded-2xl hover:bg-[#2c3333] transition-all w-full flex items-center justify-center gap-2 shadow-xs font-bold text-sm active:translate-y-[1px] cursor-pointer"
-            >
-              <PlusCircle className="w-5 h-5 text-[#d6eaaf]" />
-              <span>입고 처리</span>
-            </button>
-
-            {/* [- 판매 처리] & [재고 조정] */}
-            <div className="grid grid-cols-2 gap-3">
+          {/* Primary Action Buttons (관리자 전용) */}
+          {isAdmin && (
+            <div className="flex flex-col gap-3 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
+              {/* [+ 입고 처리] */}
               <button
-                onClick={handleQuickSell}
-                className="border border-[#c3c7c7] text-[#171e1e] bg-[#ffffff] hover:bg-[#f5f3ee] py-3.5 px-3 rounded-2xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs active:translate-y-[1px] cursor-pointer shadow-xs"
+                onClick={handleQuickRestock}
+                className="bg-[#171e1e] text-white py-4 px-6 rounded-2xl hover:bg-[#2c3333] transition-all w-full flex items-center justify-center gap-2 shadow-xs font-bold text-sm active:translate-y-[1px] cursor-pointer"
               >
-                <ShoppingCart className="w-4 h-4 text-[#ba1a1a]" />
-                <span>판매 처리</span>
+                <PlusCircle className="w-5 h-5 text-[#d6eaaf]" />
+                <span>입고 처리</span>
               </button>
 
+              {/* [- 판매 처리] & [재고 조정] */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={handleQuickSell}
+                  className="border border-[#c3c7c7] text-[#171e1e] bg-[#ffffff] hover:bg-[#f5f3ee] py-3.5 px-3 rounded-2xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs active:translate-y-[1px] cursor-pointer shadow-xs"
+                >
+                  <ShoppingCart className="w-4 h-4 text-[#ba1a1a]" />
+                  <span>판매 처리</span>
+                </button>
+
+                <button
+                  onClick={handleAdjust}
+                  className="border border-[#c3c7c7] text-[#171e1e] bg-[#ffffff] hover:bg-[#f5f3ee] py-3.5 px-3 rounded-2xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs active:translate-y-[1px] cursor-pointer shadow-xs"
+                >
+                  <Edit3 className="w-4 h-4 text-[#434848]" />
+                  <span>재고 조정</span>
+                </button>
+              </div>
+
+              {/* [도서 정보 및 표지 수정] */}
               <button
-                onClick={handleAdjust}
-                className="border border-[#c3c7c7] text-[#171e1e] bg-[#ffffff] hover:bg-[#f5f3ee] py-3.5 px-3 rounded-2xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs active:translate-y-[1px] cursor-pointer shadow-xs"
+                onClick={() => setIsEditModalOpen(true)}
+                className="border border-[#c3c7c7] text-[#171e1e] bg-[#ffffff] hover:bg-[#f5f3ee] py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 font-bold text-xs active:translate-y-[1px] cursor-pointer shadow-xs"
               >
-                <Edit3 className="w-4 h-4 text-[#434848]" />
-                <span>재고 조정</span>
+                <FileEdit className="w-4 h-4 text-[#737878]" />
+                <span>도서 정보 & 표지 수정</span>
+              </button>
+
+              {/* [도서 삭제] */}
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="border border-[#ffdad6] text-[#ba1a1a] bg-[#fff8f7] hover:bg-[#ffdad6]/40 py-2.5 px-3 rounded-2xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs active:translate-y-[1px] cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4 text-[#ba1a1a]" />
+                <span>도서 삭제</span>
               </button>
             </div>
-
-            {/* [도서 정보 및 표지 수정] */}
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="border border-[#c3c7c7] text-[#171e1e] bg-[#ffffff] hover:bg-[#f5f3ee] py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 font-bold text-xs active:translate-y-[1px] cursor-pointer shadow-xs"
-            >
-              <FileEdit className="w-4 h-4 text-[#737878]" />
-              <span>도서 정보 & 표지 수정</span>
-            </button>
-
-            {/* [도서 삭제] */}
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="border border-[#ffdad6] text-[#ba1a1a] bg-[#fff8f7] hover:bg-[#ffdad6]/40 py-2.5 px-3 rounded-2xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs active:translate-y-[1px] cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4 text-[#ba1a1a]" />
-              <span>도서 삭제</span>
-            </button>
-          </div>
+          )}
         </div>
 
         {/* Right Column (8 cols on desktop) */}
@@ -219,13 +235,15 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                   {book.author}
                 </h2>
               </div>
-              <button
-                onClick={() => setIsEditModalOpen(true)}
-                className="p-2.5 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-2xl text-[#434848] hover:text-[#171e1e] transition-all cursor-pointer shadow-xs flex-shrink-0"
-                title="도서 정보 수정"
-              >
-                <FileEdit className="w-4 h-4" />
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="p-2.5 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-2xl text-[#434848] hover:text-[#171e1e] transition-all cursor-pointer shadow-xs flex-shrink-0"
+                  title="도서 정보 수정"
+                >
+                  <FileEdit className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
             {/* Bento-style Metadata Grid */}

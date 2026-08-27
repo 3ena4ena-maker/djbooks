@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Search, ScanLine, Cloud, CloudOff, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, ScanLine, Cloud, CloudOff, RefreshCw, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
 import { ViewType } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
+import { authStore } from '../../services/authStore';
 
 interface TopHeaderProps {
   onNavigate: (view: ViewType) => void;
@@ -9,6 +10,7 @@ interface TopHeaderProps {
   searchQuery?: string;
   onOpenScanner?: () => void;
   onOpenAddBook?: () => void;
+  onShowToast?: (msg: string) => void;
   currentView?: ViewType;
 }
 
@@ -17,11 +19,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onSearch,
   searchQuery = '',
   onOpenScanner,
-  onOpenAddBook,
+  onShowToast,
   currentView,
 }) => {
   const [localQuery, setLocalQuery] = useState(searchQuery);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(authStore.isAdmin);
+
+  useEffect(() => {
+    const unsubscribe = authStore.subscribe(() => {
+      setIsAdmin(authStore.isAdmin);
+    });
+    return unsubscribe;
+  }, []);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalQuery(e.target.value);
@@ -46,6 +56,28 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     }
   };
 
+  // Triple click / touch handler on store name in mobile header
+  const handleStoreTitleClick = () => {
+    const activated = authStore.handleTripleClickTrigger();
+    if (activated) {
+      if (onShowToast) {
+        onShowToast('🎉 관리자 모드가 활성화되었습니다.');
+      }
+    } else {
+      onNavigate('dashboard');
+    }
+  };
+
+  const handleExitAdminMode = () => {
+    authStore.disableAdminMode();
+    if (onShowToast) {
+      onShowToast('관리자 모드가 종료되었습니다. (일반 방문자 모드)');
+    }
+    if (currentView === 'history' || currentView === 'settings') {
+      onNavigate('dashboard');
+    }
+  };
+
   const settings = inventoryStore.getSettings();
 
   const viewTitleMap: Record<ViewType, string> = {
@@ -63,11 +95,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       {/* Mobile Title with Store Name & Current Page */}
       <div className="lg:hidden flex items-center gap-2">
         <span
-          className="font-['Playfair_Display','Noto_Serif_KR',serif] text-base sm:text-lg font-bold text-[#171e1e] cursor-pointer truncate max-w-[130px]"
-          onClick={() => onNavigate('dashboard')}
-          title={settings.storeName || '책방 재고'}
+          className="font-['Playfair_Display','Noto_Serif_KR',serif] text-base sm:text-lg font-bold text-[#171e1e] cursor-pointer truncate max-w-[130px] active:opacity-75 select-none"
+          onClick={handleStoreTitleClick}
+          title={settings.storeName || '독립서점'}
         >
-          {settings.storeName || '책방'}
+          {settings.storeName || '독립서점'}
         </span>
         {currentView && currentView !== 'dashboard' && (
           <span className="text-xs font-semibold text-[#434848] bg-[#f0eee9] px-2 py-0.5 rounded-md border border-[#c3c7c7] whitespace-nowrap">
@@ -100,6 +132,21 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Action shortcuts on top right */}
       <div className="flex items-center gap-2 md:gap-3">
+        {/* Admin Mode Badge & Exit Button */}
+        {isAdmin && (
+          <div className="flex items-center gap-1.5 bg-[#edf5e1] text-[#2d4710] border border-[#c3d9a5] px-2.5 sm:px-3 py-1 rounded-full text-xs font-bold shadow-2xs">
+            <ShieldCheck className="w-3.5 h-3.5 text-[#2e7d32]" />
+            <span className="hidden xs:inline">관리자 모드</span>
+            <button
+              onClick={handleExitAdminMode}
+              className="ml-1 text-[11px] font-semibold text-[#5c6868] hover:text-[#ba1a1a] transition-colors cursor-pointer bg-white/70 hover:bg-white px-1.5 py-0.5 rounded border border-[#c3d9a5]"
+              title="관리자 모드 종료"
+            >
+              종료
+            </button>
+          </div>
+        )}
+
         {/* Supabase Status Pill */}
         <button
           onClick={handleManualSync}
@@ -146,15 +193,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <span className="hidden sm:inline">스캔하기</span>
         </button>
 
-        <button
-          onClick={() => onNavigate('settings')}
-          className="p-2 text-[#434848] hover:bg-[#f5f3ee] hover:text-[#171e1e] rounded-full transition-colors relative cursor-pointer"
-          title="설정"
-        >
-          <SettingsIcon className="w-5 h-5" />
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => onNavigate('settings')}
+            className="p-2 text-[#434848] hover:bg-[#f5f3ee] hover:text-[#171e1e] rounded-full transition-colors relative cursor-pointer"
+            title="서점 설정"
+          >
+            <SettingsIcon className="w-5 h-5" />
+          </button>
+        )}
       </div>
     </header>
   );
 };
-

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ViewType, InventoryFilter } from './types';
 import { inventoryStore } from './services/inventoryStore';
+import { authStore } from './services/authStore';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopHeader } from './components/layout/TopHeader';
 import { BottomNavigation } from './components/layout/BottomNavigation';
@@ -15,10 +16,18 @@ import { QuickRestockModal } from './components/modals/QuickRestockModal';
 import { Toast } from './components/common/Toast';
 
 export default function App() {
+  const [isAdmin, setIsAdmin] = useState(authStore.isAdmin);
+
+  useEffect(() => {
+    const unsubscribe = authStore.subscribe(() => {
+      setIsAdmin(authStore.isAdmin);
+    });
+    return unsubscribe;
+  }, []);
+
   // Parse current route from window location hash or pathname fallback
   const parseHashRoute = (): { view: ViewType; bookId: string | null } => {
     const hash = window.location.hash.replace(/^#\/?/, '').trim();
-    // Pathname fallback if user navigates with direct path (e.g. /orders, /inventory)
     const path = window.location.pathname.replace(/^\//, '').trim();
     const route = hash || path;
 
@@ -55,6 +64,17 @@ export default function App() {
   const [isAddBookOpen, setIsAddBookOpen] = useState(false);
   const [isQuickRestockOpen, setIsQuickRestockOpen] = useState(false);
 
+  // Guard admin routes if not in admin mode
+  useEffect(() => {
+    if (!isAdmin && (currentView === 'history' || currentView === 'settings')) {
+      setCurrentView('dashboard');
+      if (window.location.hash) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      setToastMessage('관리자 모드 전용 메뉴입니다. 메인 화면으로 이동합니다.');
+    }
+  }, [isAdmin, currentView]);
+
   // Re-render trigger when store changes
   const [, setTick] = useState(0);
 
@@ -69,6 +89,13 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const { view, bookId } = parseHashRoute();
+      // Guard admin pages on direct hash change
+      if (!authStore.isAdmin && (view === 'history' || view === 'settings')) {
+        setCurrentView('dashboard');
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+        setToastMessage('관리자 모드 전용 메뉴입니다.');
+        return;
+      }
       setCurrentView(view);
       if (bookId) {
         setSelectedBookId(bookId);
@@ -83,6 +110,11 @@ export default function App() {
   }, []);
 
   const handleNavigate = (view: ViewType) => {
+    if (!isAdmin && (view === 'history' || view === 'settings')) {
+      setToastMessage('관리자 모드 전용 메뉴입니다.');
+      return;
+    }
+
     setCurrentView(view);
     if (view === 'dashboard') {
       if (window.location.hash) {
@@ -129,8 +161,21 @@ export default function App() {
         <Sidebar
           currentView={currentView}
           onNavigate={handleNavigate}
-          onOpenQuickRestock={() => setIsQuickRestockOpen(true)}
-          onOpenAddBook={() => setIsAddBookOpen(true)}
+          onOpenQuickRestock={() => {
+            if (!isAdmin) {
+              showToast('관리자 모드에서만 사용 가능한 기능입니다.');
+              return;
+            }
+            setIsQuickRestockOpen(true);
+          }}
+          onOpenAddBook={() => {
+            if (!isAdmin) {
+              showToast('관리자 모드에서만 사용 가능한 기능입니다.');
+              return;
+            }
+            setIsAddBookOpen(true);
+          }}
+          onShowToast={showToast}
         />
 
         {/* Right Content Area */}
@@ -140,7 +185,14 @@ export default function App() {
             onNavigate={handleNavigate}
             onSearch={handleGlobalSearch}
             onOpenScanner={() => handleNavigate('scanner')}
-            onOpenAddBook={() => setIsAddBookOpen(true)}
+            onOpenAddBook={() => {
+              if (!isAdmin) {
+                showToast('관리자 모드에서만 사용 가능한 기능입니다.');
+                return;
+              }
+              setIsAddBookOpen(true);
+            }}
+            onShowToast={showToast}
             currentView={currentView}
           />
 
@@ -150,8 +202,20 @@ export default function App() {
               <DashboardView
                 onNavigate={handleNavigate}
                 onSelectBook={handleSelectBook}
-                onOpenAddBook={() => setIsAddBookOpen(true)}
-                onOpenQuickRestock={() => setIsQuickRestockOpen(true)}
+                onOpenAddBook={() => {
+                  if (!isAdmin) {
+                    showToast('관리자 모드에서만 사용 가능한 기능입니다.');
+                    return;
+                  }
+                  setIsAddBookOpen(true);
+                }}
+                onOpenQuickRestock={() => {
+                  if (!isAdmin) {
+                    showToast('관리자 모드에서만 사용 가능한 기능입니다.');
+                    return;
+                  }
+                  setIsQuickRestockOpen(true);
+                }}
                 onFilterLowStock={handleFilterLowStock}
                 onShowToast={showToast}
               />
@@ -168,7 +232,13 @@ export default function App() {
             {(currentView === 'inventory' || currentView === 'orders') && (
               <InventoryView
                 onSelectBook={handleSelectBook}
-                onOpenAddBook={() => setIsAddBookOpen(true)}
+                onOpenAddBook={() => {
+                  if (!isAdmin) {
+                    showToast('관리자 모드에서만 사용 가능한 기능입니다.');
+                    return;
+                  }
+                  setIsAddBookOpen(true);
+                }}
                 initialFilter={inventoryFilter}
                 searchQuery={searchQuery}
                 onShowToast={showToast}
@@ -208,7 +278,7 @@ export default function App() {
       />
 
       {/* Global Modals */}
-      {isAddBookOpen && (
+      {isAdmin && isAddBookOpen && (
         <AddBookModal
           onClose={() => setIsAddBookOpen(false)}
           onSuccess={(newBookId, msg) => {
@@ -221,7 +291,7 @@ export default function App() {
         />
       )}
 
-      {isQuickRestockOpen && (
+      {isAdmin && isQuickRestockOpen && (
         <QuickRestockModal
           onClose={() => setIsQuickRestockOpen(false)}
           onSuccess={(msg) => showToast(msg)}

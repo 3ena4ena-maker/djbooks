@@ -151,7 +151,7 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
     }
 
     if (isEditing && order) {
-      const ok = await inventoryStore.updateCustomerOrder(order.id, {
+      const res = await inventoryStore.updateCustomerOrder(order.id, {
         bookTitle: bookTitle.trim(),
         bookAuthor: bookAuthor.trim(),
         bookPublisher: bookPublisher.trim(),
@@ -165,15 +165,17 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
         note: note.trim(),
         orderDate,
       });
-      if (ok) {
+      if (res.success) {
         feedback.playBeep('success');
         onSuccess(`'${customerName}'님의 '${bookTitle}' 주문 정보가 수정되었습니다.`);
+        onClose();
       } else {
         feedback.playBeep('warning');
-        onSuccess(`'${customerName}'님의 주문 정보 저장에 실패했습니다.`);
+        const errDetail = res.error?.message ? `: ${res.error.message}` : '';
+        onSuccess(`'${customerName}'님의 주문 정보 저장 실패${errDetail}`);
       }
     } else {
-      inventoryStore.addCustomerOrder({
+      const addRes = await inventoryStore.addCustomerOrder({
         bookTitle: bookTitle.trim(),
         bookAuthor: bookAuthor.trim(),
         bookPublisher: bookPublisher.trim(),
@@ -187,11 +189,16 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
         note: note.trim(),
         orderDate,
       });
-      feedback.playBeep('success');
-      onSuccess(`'${customerName}'님의 새 도서 주문이 등록되었습니다.`);
+      if (addRes.success) {
+        feedback.playBeep('success');
+        onSuccess(`'${customerName}'님의 새 도서 주문이 등록되었습니다.`);
+        onClose();
+      } else {
+        feedback.playBeep('warning');
+        const errDetail = addRes.error?.message ? `: ${addRes.error.message}` : '';
+        onSuccess(`주문 등록 실패${errDetail}`);
+      }
     }
-
-    onClose();
   };
 
   return (

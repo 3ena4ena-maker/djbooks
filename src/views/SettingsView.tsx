@@ -111,14 +111,22 @@ CREATE TABLE IF NOT EXISTS customer_orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   book_title TEXT NOT NULL,
   book_author TEXT,
+  publisher TEXT,
   book_publisher TEXT,
+  isbn VARCHAR(32),
   quantity INTEGER NOT NULL DEFAULT 1,
   customer_name TEXT NOT NULL,
-  customer_contact TEXT NOT NULL,
+  contact TEXT,
+  customer_contact TEXT,
   deposit_paid BOOLEAN DEFAULT false,
+  deposit_amount NUMERIC(10, 2) DEFAULT 0,
+  deposit_method VARCHAR(32) DEFAULT 'NONE',
+  total_price NUMERIC(10, 2),
   order_price NUMERIC(10, 2),
+  order_type VARCHAR(64) DEFAULT 'CUSTOMER_REQUEST',
   status VARCHAR(32) NOT NULL DEFAULT '주문접수',
   note TEXT,
+  memo TEXT,
   order_date VARCHAR(32),
   created_at TIMESTAMPTZ DEFAULT now(),
   completed_at TIMESTAMPTZ
@@ -128,6 +136,79 @@ CREATE TABLE IF NOT EXISTS customer_orders (
 CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn);
 CREATE INDEX IF NOT EXISTS idx_inventory_logs_book_id ON inventory_logs(book_id);
 CREATE INDEX IF NOT EXISTS idx_customer_orders_status ON customer_orders(status);
+
+-- 🔐 Row Level Security (RLS) Policies (Full Access for Anon / Authenticated)
+ALTER TABLE books ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_orders ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "Allow all on books" ON books FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Allow all on inventory" ON inventory FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Allow all on inventory_logs" ON inventory_logs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Allow all on customer_orders" ON customer_orders FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+`;
+
+  const [sqlTab, setSqlTab] = useState<'ddl' | 'diagnostic'>('ddl');
+
+  const supabaseDiagnosticSql = `-- ==========================================
+-- 🛠️ customer_orders Supabase 진단 쿼리 🛠️
+-- ==========================================
+
+-- 1. customer_orders 테이블 컬럼 목록 및 데이터 타입 확인
+SELECT
+  column_name,
+  data_type,
+  is_nullable,
+  column_default
+FROM information_schema.columns
+WHERE table_schema = 'public'
+AND table_name = 'customer_orders'
+ORDER BY ordinal_position;
+
+-- 2. customer_orders 테이블 RLS 활성화 여부 확인
+SELECT
+  schemaname,
+  tablename,
+  rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public'
+AND tablename = 'customer_orders';
+
+-- 3. customer_orders 테이블에 설정된 RLS 정책 목록 (cmd: ALL, SELECT, INSERT, UPDATE, DELETE)
+SELECT
+  schemaname,
+  tablename,
+  policyname,
+  permissive,
+  roles,
+  cmd,
+  qual,
+  with_check
+FROM pg_policies
+WHERE schemaname = 'public'
+AND tablename = 'customer_orders';
+
+-- 4. [원클릭 복구] UPDATE 권한 포함 RLS 정책 전체 허용 SQL
+ALTER TABLE customer_orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on customer_orders" ON customer_orders;
+CREATE POLICY "Allow all on customer_orders"
+ON customer_orders
+FOR ALL
+TO anon, authenticated
+USING (true)
+WITH CHECK (true);
 `;
 
   return (
@@ -342,26 +423,52 @@ CREATE INDEX IF NOT EXISTS idx_customer_orders_status ON customer_orders(status)
         </div>
       </div>
 
-      {/* Supabase Schema Modal */}
+      {/* Supabase Schema & Diagnostic Modal */}
       {showSqlModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
           <div className="bg-[#1b1c19] text-white w-full max-w-2xl rounded-2xl p-5 shadow-2xl border border-white/20 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <span className="font-mono text-xs text-[#d6eaaf]">Supabase Schema (DDL)</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSqlTab('ddl')}
+                  className={`px-3 py-1 text-xs font-mono rounded-lg transition-all cursor-pointer ${
+                    sqlTab === 'ddl'
+                      ? 'bg-[#d6eaaf] text-[#142000] font-bold'
+                      : 'bg-white/5 text-white/70 hover:bg-white/10'
+                  }`}
+                >
+                  DDL 스키마
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSqlTab('diagnostic')}
+                  className={`px-3 py-1 text-xs font-mono rounded-lg transition-all cursor-pointer ${
+                    sqlTab === 'diagnostic'
+                      ? 'bg-[#d6eaaf] text-[#142000] font-bold'
+                      : 'bg-white/5 text-white/70 hover:bg-white/10'
+                  }`}
+                >
+                  RLS/진단 SQL
+                </button>
+              </div>
               <button
+                type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(supabaseSqlSchema);
-                  onShowToast('SQL 스키마가 클립보드에 복사되었습니다.');
+                  const sqlToCopy = sqlTab === 'ddl' ? supabaseSqlSchema : supabaseDiagnosticSql;
+                  navigator.clipboard.writeText(sqlToCopy);
+                  onShowToast(sqlTab === 'ddl' ? 'SQL DDL 스키마가 복사되었습니다.' : '진단용 SQL이 복사되었습니다.');
                 }}
                 className="px-3 py-1 bg-white/10 hover:bg-white/20 text-xs rounded-lg flex items-center gap-1 cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5" /> 복사하기
               </button>
             </div>
-            <pre className="p-3 my-3 bg-black/50 rounded-xl overflow-x-auto text-[11px] font-mono text-white/90 flex-1 leading-relaxed">
-              {supabaseSqlSchema}
+            <pre className="p-3 my-3 bg-black/50 rounded-xl overflow-x-auto text-[11px] font-mono text-white/90 flex-1 leading-relaxed whitespace-pre">
+              {sqlTab === 'ddl' ? supabaseSqlSchema : supabaseDiagnosticSql}
             </pre>
             <button
+              type="button"
               onClick={() => setShowSqlModal(false)}
               className="mt-2 w-full py-2.5 bg-white text-black font-bold text-xs rounded-xl hover:bg-white/90 cursor-pointer"
             >

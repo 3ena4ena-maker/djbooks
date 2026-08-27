@@ -24,7 +24,7 @@ const STORAGE_KEYS = {
 
 const INITIAL_ORDERS: CustomerOrder[] = [
   {
-    id: 'order-1',
+    id: 'a1b2c3d4-1111-4111-8111-111111111111',
     bookTitle: '아무튼, 서점',
     bookAuthor: '김윤아',
     bookPublisher: '위고',
@@ -39,7 +39,7 @@ const INITIAL_ORDERS: CustomerOrder[] = [
     createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
   },
   {
-    id: 'order-2',
+    id: 'a1b2c3d4-2222-4222-8222-222222222222',
     bookTitle: '식물과 함께하는 오후',
     bookAuthor: '이지원',
     bookPublisher: '초록책방',
@@ -54,7 +54,7 @@ const INITIAL_ORDERS: CustomerOrder[] = [
     createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
   },
   {
-    id: 'order-3',
+    id: 'a1b2c3d4-3333-4333-8333-333333333333',
     bookTitle: '빛과 물질에 관한 스펙트럼',
     bookAuthor: '김초엽',
     bookPublisher: '문학동네',
@@ -1075,181 +1075,405 @@ class InventoryStore {
     return this.orders.find((o) => o.id === orderId);
   }
 
-  public addCustomerOrder(orderData: Omit<CustomerOrder, 'id' | 'createdAt'>): CustomerOrder {
+  private buildOrderDbPayload(order: CustomerOrder, overrides?: Partial<CustomerOrder>): Record<string, unknown> {
+    const status = overrides?.status ?? order.status;
+    const completedAt =
+      status === '수령완료'
+        ? (overrides?.completedAt ?? order.completedAt ?? new Date().toISOString())
+        : (status === '취소됨' ? null : (overrides?.completedAt ?? order.completedAt ?? null));
+
+    const depositAmt = overrides?.depositAmount !== undefined
+      ? overrides.depositAmount
+      : (order.depositAmount !== undefined ? order.depositAmount : (order.depositPaid ? (order.orderPrice || 0) : 0));
+    const depositMeth = overrides?.depositMethod ?? order.depositMethod ?? (order.depositPaid ? 'CARD' : 'NONE');
+    const orderPrice = overrides?.orderPrice !== undefined ? overrides.orderPrice : (order.orderPrice !== undefined ? order.orderPrice : null);
+
+    return {
+      id: order.id,
+      customer_name: overrides?.customerName ?? order.customerName,
+      contact: overrides?.customerContact ?? order.customerContact ?? '',
+      book_title: overrides?.bookTitle ?? order.bookTitle,
+      book_author: overrides?.bookAuthor ?? order.bookAuthor ?? null,
+      publisher: overrides?.bookPublisher ?? order.bookPublisher ?? null,
+      isbn: overrides?.isbn ?? order.isbn ?? null,
+      quantity: overrides?.quantity ?? order.quantity ?? 1,
+      order_type: overrides?.orderType ?? order.orderType ?? 'CUSTOMER_REQUEST',
+      deposit_amount: depositAmt,
+      deposit_method: depositMeth,
+      total_price: orderPrice,
+      status: status,
+      memo: overrides?.note ?? order.note ?? null,
+      created_at: order.createdAt || new Date().toISOString(),
+      completed_at: completedAt,
+    };
+  }
+
+  private async syncCustomerOrderToDb(order: CustomerOrder, overrides?: Partial<CustomerOrder>): Promise<{ success: boolean; data?: any; error?: any }> {
+    if (!isSupabaseConfigured) return { success: true };
+
+    const payload = this.buildOrderDbPayload(order, overrides);
+
+    try {
+      // 1차 시도: 표준 필드명으로 upsert
+      const { data, error } = await supabase
+        .from('customer_orders')
+        .upsert(payload, { onConflict: 'id' })
+        .select();
+
+      if (!error && data && data.length > 0) {
+        return { success: true, data: data[0] };
+      }
+
+      // 만약 컬럼명 불일치 에러(contact, memo, total_price 등)인 경우 대체 컬럼명으로 재시도
+      if (error && (error.message.includes('column') || error.message.includes('does not exist') || error.code === '42703')) {
+        console.warn('[InventoryStore] customer_orders 컬럼 대체 포맷으로 재시도:', error.message);
+        const altPayload: Record<string, unknown> = {
+          id: payload.id,
+          book_title: payload.book_title,
+          book_author: payload.book_author,
+          book_publisher: payload.publisher,
+          publisher: payload.publisher,
+          quantity: payload.quantity,
+          customer_name: payload.customer_name,
+          customer_contact: payload.contact,
+          contact: payload.contact,
+          deposit_paid: Boolean(order.depositPaid),
+          deposit_amount: payload.deposit_amount,
+          order_price: payload.total_price,
+          total_price: payload.total_price,
+          status: payload.status,
+          note: payload.memo,
+          memo: payload.memo,
+          created_at: payload.created_at,
+          completed_at: payload.completed_at,
+        };
+
+        const { data: altData, error: altError } = await supabase
+          .from('customer_orders')
+          .upsert(altPayload, { onConflict: 'id' })
+          .select();
+
+        if (!altError && altData && altData.length > 0) {
+          return { success: true, data: altData[0] };
+        }
+        return { success: false, error: altError || error };
+      }
+
+      return { success: false, data, error };
+    } catch (e) {
+      return { success: false, error: e };
+    }
+  }
+
+  public async addCustomerOrder(
+    orderData: Omit<CustomerOrder, 'id' | 'createdAt'>
+  ): Promise<{ success: boolean; order?: CustomerOrder; error?: any }> {
     const now = new Date().toISOString();
     const newId = generateUUID();
-    const depositAmt = orderData.depositAmount !== undefined
-      ? orderData.depositAmount
-      : (orderData.depositPaid ? (orderData.orderPrice || 0) : 0);
+    const depositAmt =
+      orderData.depositAmount !== undefined
+        ? orderData.depositAmount
+        : (orderData.depositPaid ? (orderData.orderPrice || 0) : 0);
     const depositMeth = orderData.depositMethod || (orderData.depositPaid ? 'CARD' : 'NONE');
     const orderDateStr = orderData.orderDate || now.split('T')[0].replace(/-/g, '.');
 
-    const newOrder: CustomerOrder = {
-      ...orderData,
-      id: newId,
-      orderDate: orderDateStr,
-      depositAmount: depositAmt,
-      depositMethod: depositMeth,
-      createdAt: now,
-      completedAt: orderData.status === '수령완료' ? (orderData.completedAt || now) : undefined,
-    };
-    this.orders = [newOrder, ...this.orders];
-    this.saveToStorage();
-
-    if (isSupabaseConfigured) {
-      (async () => {
-        try {
-          const { data, error } = await supabase.from('customer_orders').insert({
-            id: newId,
-            customer_name: orderData.customerName,
-            contact: orderData.customerContact || '',
-            book_title: orderData.bookTitle,
-            book_author: orderData.bookAuthor || null,
-            publisher: orderData.bookPublisher || null,
-            isbn: orderData.isbn || null,
-            quantity: orderData.quantity || 1,
-            order_type: orderData.orderType || 'CUSTOMER_REQUEST',
-            deposit_amount: depositAmt,
-            deposit_method: depositMeth,
-            total_price: orderData.orderPrice !== undefined ? orderData.orderPrice : null,
-            status: orderData.status,
-            memo: orderData.note || null,
-            created_at: now,
-            completed_at: newOrder.completedAt || null,
-          });
-
-          if (error) {
-            console.error('[InventoryStore] Supabase customer_orders INSERT 실패:', error);
-          } else {
-            console.log('[InventoryStore] Supabase customer_orders INSERT 성공:', newId, data);
-          }
-        } catch (e) {
-          console.error('[InventoryStore] Supabase customer_orders INSERT 예외 발생:', e);
-        }
-      })();
-    }
-
-    return newOrder;
-  }
-
-  public async updateCustomerOrderStatus(orderId: string, status: CustomerOrderStatus): Promise<boolean> {
-    console.log('[InventoryStore] 1. UPDATE 시작 (updateCustomerOrderStatus):', { orderId, targetStatus: status });
-
-    const orderIndex = this.orders.findIndex((o) => o.id === orderId);
-    if (orderIndex === -1) {
-      console.warn('[InventoryStore] ❌ 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
-      return false;
-    }
-
-    const previousOrders = [...this.orders];
-    const existing = this.orders[orderIndex];
-    const now = new Date().toISOString();
-    const completedAt =
-      status === '수령완료'
-        ? (existing.completedAt || now)
-        : (status === '취소됨' ? undefined : existing.completedAt);
-
-    // Supabase DB 영구 저장 및 실제 반영 확인
     if (isSupabaseConfigured) {
       try {
-        const updatePayload = {
-          status,
-          completed_at: completedAt || null,
+        const payload: Record<string, unknown> = {
+          id: newId,
+          customer_name: orderData.customerName,
+          contact: orderData.customerContact || '',
+          book_title: orderData.bookTitle,
+          book_author: orderData.bookAuthor || null,
+          publisher: orderData.bookPublisher || null,
+          isbn: orderData.isbn || null,
+          quantity: Math.max(1, orderData.quantity || 1),
+          order_type: orderData.orderType || 'CUSTOMER_REQUEST',
+          deposit_amount: depositAmt,
+          deposit_method: depositMeth,
+          total_price: orderData.orderPrice !== undefined ? orderData.orderPrice : null,
+          status: orderData.status || '주문접수',
+          memo: orderData.note || null,
+          created_at: now,
+          completed_at: orderData.status === '수령완료' ? (orderData.completedAt || now) : null,
         };
 
         const { data, error } = await supabase
           .from('customer_orders')
-          .update(updatePayload)
-          .eq('id', orderId)
-          .select();
+          .insert(payload)
+          .select('*')
+          .single();
 
-        console.log('[InventoryStore] 2. UPDATE 결과 응답:', { orderId, targetStatus: status, data, error });
+        console.log('[ORDER INSERT RESULT]', {
+          data,
+          error,
+        });
 
         if (error) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 실패 (에러 발생):', {
-            orderId,
-            targetStatus: status,
+          console.error('[ORDER INSERT ERROR DETAILS]', {
             code: error.code,
             message: error.message,
             details: error.details,
             hint: error.hint,
           });
-          return false;
+          return { success: false, error };
         }
 
-        if (!data || data.length === 0) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 실패 (수정된 row 0건 - RLS UPDATE 정책 미허용 또는 대상 orderId row 부재):', {
-            orderId,
-            targetStatus: status,
-            possibleRLSNotice: 'Supabase SQL Editor에서 customer_orders 테이블에 anon/authenticated UPDATE 정책(allow all)을 확인해주세요.',
-          });
-          return false;
-        }
+        const insertedDbId = data?.id;
+        const finalId = insertedDbId || newId;
 
-        const updatedRow = data[0];
-        console.log('[InventoryStore] 3. 수정된 row 확인:', updatedRow);
+        console.log('[ORDER ID CHECK]', {
+          insertedDbId,
+          frontendOrderId: finalId,
+          same: insertedDbId === finalId,
+        });
 
-        // 4. DB 상태 검증: 반환된 row의 status가 요청한 status와 일치하는지 확인
-        if (updatedRow.status !== status) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 검증 실패 (status 불일치):', {
-            expected: status,
-            actual: updatedRow.status,
-          });
-          return false;
-        }
-
-        console.log('[InventoryStore] 4. DB 상태 검증 통과 -> 5. 최종 성공 완료:', { orderId, finalStatus: updatedRow.status });
-
-        // DB UPDATE 성공 시 화면 및 로컬 스토리지 갱신
-        this.orders[orderIndex] = {
-          ...existing,
-          status,
-          completedAt,
+        const createdOrder: CustomerOrder = {
+          ...orderData,
+          id: String(finalId),
+          orderDate: orderDateStr,
+          depositAmount: depositAmt,
+          depositMethod: depositMeth,
+          createdAt: data?.created_at || now,
+          completedAt: orderData.status === '수령완료' ? (orderData.completedAt || now) : undefined,
         };
+
+        this.orders = [createdOrder, ...this.orders];
         this.saveToStorage();
         this.notify();
-        return true;
-      } catch (e) {
-        console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 예외 발생:', {
-          orderId,
-          targetStatus: status,
-          error: e,
-        });
-        return false;
+        return { success: true, order: createdOrder };
+      } catch (e: any) {
+        console.error('[ORDER INSERT EXCEPTION]', e);
+        return { success: false, error: { message: e?.message || '주문 생성 중 예외 발생' } };
       }
     } else {
-      console.warn('[InventoryStore] Supabase 미연결 상태 - 로컬 스토리지에만 저장');
-      this.orders[orderIndex] = {
-        ...existing,
-        status,
-        completedAt,
+      const createdOrder: CustomerOrder = {
+        ...orderData,
+        id: newId,
+        orderDate: orderDateStr,
+        depositAmount: depositAmt,
+        depositMethod: depositMeth,
+        createdAt: now,
+        completedAt: orderData.status === '수령완료' ? (orderData.completedAt || now) : undefined,
       };
+      this.orders = [createdOrder, ...this.orders];
       this.saveToStorage();
       this.notify();
-      return true;
+      return { success: true, order: createdOrder };
     }
   }
 
-  public async updateCustomerOrder(orderId: string, updates: Partial<CustomerOrder>): Promise<boolean> {
-    console.log('[InventoryStore] 1. UPDATE 시작 (updateCustomerOrder 전체):', { orderId, updates });
-
+  public async updateCustomerOrderStatus(
+    orderId: string,
+    status: CustomerOrderStatus
+  ): Promise<{ success: boolean; error?: any }> {
     const orderIndex = this.orders.findIndex((o) => o.id === orderId);
     if (orderIndex === -1) {
-      console.warn('[InventoryStore] ❌ 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
-      return false;
+      console.warn('[ORDER DEBUG] ❌ 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
+      return { success: false, error: { message: `로컬 주문 목록에서 ID(${orderId})를 찾을 수 없습니다.` } };
     }
 
-    const previousOrders = [...this.orders];
+    const existing = this.orders[orderIndex];
+
+    // 1. Mandatory Debug Logs
+    console.log('[ORDER DEBUG] orderId:', orderId);
+    console.log('[ORDER DEBUG] orderId type:', typeof orderId);
+    console.log('[ORDER DEBUG] target status:', status);
+    console.log('[ORDER DEBUG] current order:', existing);
+
+    const now = new Date().toISOString();
+    const completedAt =
+      status === '수령완료'
+        ? (existing.completedAt || now)
+        : (status === '취소됨' ? null : (existing.completedAt || null));
+
+    if (isSupabaseConfigured) {
+      try {
+        // 3. Supabase DB Check before UPDATE
+        const { data: dbOrder, error: findError } = await supabase
+          .from('customer_orders')
+          .select('*')
+          .eq('id', orderId)
+          .maybeSingle();
+
+        console.log('[ORDER DB CHECK]', {
+          orderId,
+          dbOrder,
+          findError,
+        });
+
+        if (findError) {
+          console.error('[ORDER DB CHECK RESULT] C: DB 조회 중 findError가 발생했습니다.', {
+            code: findError.code,
+            message: findError.message,
+            details: findError.details,
+            hint: findError.hint,
+          });
+          return { success: false, error: findError };
+        }
+
+        if (!dbOrder) {
+          console.warn('[ORDER DB CHECK RESULT] B: dbOrder가 null입니다. (DB에 해당 orderId row가 존재하지 않음)');
+          const payload = this.buildOrderDbPayload(existing, { status, completedAt: completedAt || undefined });
+          const { data: upsertData, error: upsertError } = await supabase
+            .from('customer_orders')
+            .upsert(payload)
+            .select('*')
+            .single();
+
+          if (upsertError || !upsertData) {
+            console.error('[ORDER DB CHECK RESULT] B: DB 행 부재로 인한 Upsert 시도 실패:', {
+              code: upsertError?.code,
+              message: upsertError?.message,
+              details: upsertError?.details,
+              hint: upsertError?.hint,
+            });
+            return { success: false, error: upsertError || { message: 'DB에 해당 주문이 존재하지 않습니다.' } };
+          }
+
+          console.log('[ORDER DB CHECK RESULT] B: DB 행 부재 -> Upsert 성공으로 DB 복구 완료:', upsertData);
+          this.orders[orderIndex] = {
+            ...existing,
+            status,
+            completedAt: upsertData.completed_at || (status === '수령완료' ? now : undefined),
+          };
+          this.saveToStorage();
+          this.notify();
+          return { success: true };
+        }
+
+        console.log('[ORDER DB CHECK RESULT] A: dbOrder가 DB에 정상 존재합니다.', dbOrder);
+
+        // 6. Execute Supabase UPDATE
+        const { data, error } = await supabase
+          .from('customer_orders')
+          .update({
+            status,
+            completed_at: completedAt,
+          })
+          .eq('id', orderId)
+          .select('*');
+
+        // 2. Output detailed UPDATE log
+        console.error('[ORDER UPDATE DEBUG]', {
+          orderId,
+          status,
+          data,
+          error,
+        });
+
+        if (error) {
+          console.error('[ORDER UPDATE ERROR FULL DETAILS]', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+          });
+          return { success: false, error };
+        }
+
+        if (!data || data.length === 0) {
+          const rlsError = {
+            code: 'RLS_UPDATE_DENIED_OR_NO_MATCH',
+            message: '수정된 DB 행이 0건입니다 (RLS UPDATE 정책 미허용 또는 id 불일치)',
+            details: 'customer_orders 테이블에 anon/authenticated UPDATE 정책(allow all)이 필요합니다.',
+            hint: 'Supabase SQL Editor에서 customer_orders 테이블에 UPDATE 정책을 설정해주세요.',
+          };
+          console.error('[ORDER UPDATE 0 ROWS MODIFIED]', rlsError);
+          return { success: false, error: rlsError };
+        }
+
+        const updatedRow = data[0];
+        if (updatedRow.status !== status) {
+          console.error('[ORDER UPDATE STATUS MISMATCH]', {
+            expected: status,
+            actual: updatedRow.status,
+          });
+          return {
+            success: false,
+            error: { message: `DB 상태 불일치 (요청: ${status}, 실제: ${updatedRow.status})` },
+          };
+        }
+
+        this.orders[orderIndex] = {
+          ...existing,
+          status,
+          completedAt: updatedRow.completed_at || (status === '수령완료' ? now : undefined),
+        };
+        this.saveToStorage();
+        this.notify();
+        return { success: true };
+      } catch (e: any) {
+        console.error('[ORDER UPDATE EXCEPTION]', e);
+        return { success: false, error: { message: e?.message || '주문 상태 변경 중 예외 발생' } };
+      }
+    } else {
+      this.orders[orderIndex] = {
+        ...existing,
+        status,
+        completedAt: completedAt || undefined,
+      };
+      this.saveToStorage();
+      this.notify();
+      return { success: true };
+    }
+  }
+
+  public async updateCustomerOrder(
+    orderId: string,
+    updates: Partial<CustomerOrder>
+  ): Promise<{ success: boolean; error?: any }> {
+    const orderIndex = this.orders.findIndex((o) => o.id === orderId);
+    if (orderIndex === -1) {
+      console.warn('[ORDER EDIT DEBUG] ❌ 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
+      return { success: false, error: { message: `주문 ID(${orderId})를 찾을 수 없습니다.` } };
+    }
+
     const existing = this.orders[orderIndex];
     const now = new Date().toISOString();
     const nextStatus = updates.status ?? existing.status;
     const completedAt =
       nextStatus === '수령완료'
         ? (updates.completedAt ?? existing.completedAt ?? now)
-        : (nextStatus === '취소됨' ? undefined : (updates.completedAt ?? existing.completedAt));
+        : (nextStatus === '취소됨' ? null : (updates.completedAt ?? existing.completedAt ?? null));
 
     if (isSupabaseConfigured) {
       try {
+        const { data: dbOrder, error: findError } = await supabase
+          .from('customer_orders')
+          .select('*')
+          .eq('id', orderId)
+          .maybeSingle();
+
+        console.log('[ORDER DB CHECK - EDIT]', { orderId, dbOrder, findError });
+
+        if (findError) {
+          console.error('[ORDER EDIT DB CHECK ERROR]', findError);
+          return { success: false, error: findError };
+        }
+
+        if (!dbOrder) {
+          const payload = this.buildOrderDbPayload(existing, { ...updates, completedAt: completedAt || undefined });
+          const { data: upsertData, error: upsertError } = await supabase
+            .from('customer_orders')
+            .upsert(payload)
+            .select('*')
+            .single();
+
+          if (upsertError || !upsertData) {
+            console.error('[ORDER EDIT UPSERT ERROR]', upsertError);
+            return { success: false, error: upsertError };
+          }
+          this.orders[orderIndex] = {
+            ...existing,
+            ...updates,
+            completedAt: upsertData.completed_at || (nextStatus === '수령완료' ? now : undefined),
+          };
+          this.saveToStorage();
+          this.notify();
+          return { success: true };
+        }
+
         const payload: Record<string, unknown> = {};
         if (updates.customerName !== undefined) payload.customer_name = updates.customerName;
         if (updates.customerContact !== undefined) payload.contact = updates.customerContact;
@@ -1269,73 +1493,56 @@ class InventoryStore {
         if (updates.orderPrice !== undefined) payload.total_price = updates.orderPrice;
         if (updates.status !== undefined) payload.status = updates.status;
         if (updates.note !== undefined) payload.memo = updates.note || null;
-        if (completedAt !== undefined) payload.completed_at = completedAt || null;
+        if (completedAt !== undefined) payload.completed_at = completedAt;
 
         const { data, error } = await supabase
           .from('customer_orders')
           .update(payload)
           .eq('id', orderId)
-          .select();
+          .select('*');
 
-        console.log('[InventoryStore] 2. UPDATE 결과 응답 (전체):', { orderId, payload, data, error });
+        console.error('[ORDER UPDATE DEBUG - EDIT]', { orderId, payload, data, error });
 
         if (error) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 실패:', {
-            orderId,
-            updates,
+          console.error('[ORDER EDIT ERROR DETAILS]', {
             code: error.code,
             message: error.message,
             details: error.details,
             hint: error.hint,
           });
-          return false;
+          return { success: false, error };
         }
 
         if (!data || data.length === 0) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 실패 (수정된 row 0건 - RLS UPDATE 정책 미허용 또는 대상 orderId row 부재):', {
-            orderId,
-            updates,
-          });
-          return false;
+          const rlsError = {
+            code: 'RLS_UPDATE_DENIED_OR_NO_MATCH',
+            message: '수정된 DB 행이 0건입니다 (RLS UPDATE 정책 확인 필요)',
+          };
+          console.error('[ORDER EDIT 0 ROWS]', rlsError);
+          return { success: false, error: rlsError };
         }
 
-        const updatedRow = data[0];
-        console.log('[InventoryStore] 3. 수정된 row 확인 (전체):', updatedRow);
-
-        if (updates.status && updatedRow.status !== updates.status) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 검증 실패 (status 불일치):', {
-            expected: updates.status,
-            actual: updatedRow.status,
-          });
-          return false;
-        }
-
-        console.log('[InventoryStore] 4. DB 상태 검증 통과 -> 5. 최종 성공 완료 (전체)');
         this.orders[orderIndex] = {
           ...existing,
           ...updates,
-          completedAt,
+          completedAt: data[0].completed_at || (nextStatus === '수령완료' ? now : undefined),
         };
         this.saveToStorage();
         this.notify();
-        return true;
-      } catch (e) {
-        console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 예외 발생:', {
-          orderId,
-          updates,
-          error: e,
-        });
-        return false;
+        return { success: true };
+      } catch (e: any) {
+        console.error('[ORDER EDIT EXCEPTION]', e);
+        return { success: false, error: { message: e?.message || '주문 정보 수정 중 예외 발생' } };
       }
     } else {
       this.orders[orderIndex] = {
         ...existing,
         ...updates,
-        completedAt,
+        completedAt: completedAt || undefined,
       };
       this.saveToStorage();
       this.notify();
-      return true;
+      return { success: true };
     }
   }
 

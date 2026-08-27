@@ -280,11 +280,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
               <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl sm:text-2xl font-bold text-[#2e7d32] mt-0.5 whitespace-nowrap">
                 {stats.weeklyRestock}
-                <span className="text-xs font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-0.5 text-[#2e7d32]/80">권</span>
+                <span className="text-xs font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-0.5 text-[#2e7d32]/80">건</span>
               </div>
             </div>
 
-            {/* 판매 블록 (재고 도서 판매 + 손님 주문 도서 판매 통합) */}
+            {/* 판매 블록 */}
             <div className="bg-white rounded-xl p-2.5 border border-[#ffcdd2] flex flex-col justify-between min-w-0">
               <span className="text-xs font-bold text-[#c62828] whitespace-nowrap flex items-center gap-1">
                 <ShoppingBag className="w-3.5 h-3.5 flex-shrink-0" />
@@ -292,16 +292,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
               <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl sm:text-2xl font-bold text-[#c62828] mt-0.5 whitespace-nowrap">
                 {stats.weeklySales}
-                <span className="text-xs font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-0.5 text-[#c62828]/80">권</span>
+                <span className="text-xs font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-0.5 text-[#c62828]/80">건</span>
               </div>
-              {stats.orderSales > 0 && (
-                <div
-                  className="text-[10px] font-medium text-[#c62828]/90 font-['Public_Sans','Noto_Sans_KR',sans-serif] mt-0.5 whitespace-nowrap truncate"
-                  title={`손님 주문 수령/판매 ${stats.orderSales}권 포함`}
-                >
-                  (주문 {stats.orderSales}권 포함)
-                </div>
-              )}
             </div>
           </div>
         </div>

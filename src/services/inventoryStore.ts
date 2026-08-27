@@ -615,54 +615,58 @@ class InventoryStore {
     const totalStock = all.reduce((sum, b) => sum + b.quantity, 0);
     const lowStockCount = all.filter((b) => b.quantity <= this.settings.lowStockThreshold).length;
 
-    // Start of current week (Monday)
+    // 대한민국 표준시(KST, UTC+9) 기준 이번 주 월요일 00:00:00.000 ~ 일요일 23:59:59.999 계산
+    const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
     const now = new Date();
-    const currentDay = now.getDay();
-    const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - diffToMonday);
-    startOfWeek.setHours(0, 0, 0, 0);
+    const kstTime = now.getTime() + KST_OFFSET_MS;
+    const kstDate = new Date(kstTime);
 
-    const weeklyLogs = this.logs.filter((l) => new Date(l.createdAt) >= startOfWeek);
+    const kstDayOfWeek = kstDate.getUTCDay(); // 0(일), 1(월), ..., 6(토)
+    const diffToMonday = kstDayOfWeek === 0 ? 6 : kstDayOfWeek - 1;
 
-    let storeSales = 0;
-    let weeklyRestock = 0;
+    const kstYear = kstDate.getUTCFullYear();
+    const kstMonth = kstDate.getUTCMonth();
+    const kstDay = kstDate.getUTCDate();
+
+    const kstMondayStart = Date.UTC(kstYear, kstMonth, kstDay - diffToMonday, 0, 0, 0, 0);
+    const kstSundayEnd = Date.UTC(kstYear, kstMonth, kstDay - diffToMonday + 6, 23, 59, 59, 999);
+
+    const startOfWeekUtc = kstMondayStart - KST_OFFSET_MS;
+    const endOfWeekUtc = kstSundayEnd - KST_OFFSET_MS;
+
+    // 기록 페이지의 실제 기록(this.logs) 중 이번 주 월요일 00:00:00 ~ 일요일 23:59:59 범위에 해당하는 기록만 필터링
+    const weeklyLogs = this.logs.filter((l) => {
+      const logTime = new Date(l.createdAt).getTime();
+      return logTime >= startOfWeekUtc && logTime <= endOfWeekUtc;
+    });
+
+    let weeklySalesCount = 0;
+    let weeklyRestockCount = 0;
 
     for (const log of weeklyLogs) {
       if (log.reason === '판매' || log.transactionType === 'OUT') {
-        storeSales += Math.abs(log.changeQuantity);
-      } else if (log.reason === '입고' || log.transactionType === 'IN') {
-        weeklyRestock += log.changeQuantity > 0 ? log.changeQuantity : 0;
+        weeklySalesCount += 1;
+      } else if (
+        log.reason === '입고' ||
+        log.reason === '재입고' ||
+        log.reason === '초기 도서 입고' ||
+        log.transactionType === 'IN' ||
+        log.changeQuantity > 0
+      ) {
+        weeklyRestockCount += 1;
       }
     }
-
-    // Count customer orders completed/sold this week (수령완료)
-    const weeklyCompletedOrders = this.orders.filter((o) => {
-      if (o.status !== '수령완료') return false;
-      const compDate = o.completedAt ? new Date(o.completedAt) : new Date(o.createdAt);
-      return compDate >= startOfWeek;
-    });
-
-    const orderSales = weeklyCompletedOrders.reduce((sum, o) => sum + (Number(o.quantity) || 1), 0);
-
-    // Initial baseline if there is no activity yet
-    if (storeSales === 0 && weeklyRestock === 0 && orderSales === 0 && this.logs.length === 0) {
-      storeSales = 12;
-      weeklyRestock = 24;
-    }
-
-    const totalWeeklySales = storeSales + orderSales;
 
     return {
       totalStock: totalStock >= 1000 ? totalStock.toLocaleString('ko-KR') : totalStock,
       rawTotalStock: totalStock,
       lowStockCount,
-      weeklySales: totalWeeklySales,
-      generalSales: storeSales,
-      orderSales,
-      weeklyRestock,
-      todaySales: totalWeeklySales,
-      todayRestock: weeklyRestock,
+      weeklySales: weeklySalesCount,
+      generalSales: weeklySalesCount,
+      orderSales: 0,
+      weeklyRestock: weeklyRestockCount,
+      todaySales: weeklySalesCount,
+      todayRestock: weeklyRestockCount,
     };
   }
 

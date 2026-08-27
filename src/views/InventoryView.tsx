@@ -335,13 +335,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         >
           <Package className="w-4 h-4" />
           <span>재고관리</span>
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full ${
-              activeTab === 'books' ? 'bg-white/20 text-white' : 'bg-[#e4e2dd] text-[#434848]'
-            }`}
-          >
-            {totalBooksCount}종
-          </span>
         </button>
 
         <button
@@ -357,21 +350,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         >
           <ClipboardList className="w-4 h-4" />
           <span>주문건</span>
-          {receivedOrdersCount + arrivedOrdersCount > 0 ? (
+          {receivedOrdersCount + arrivedOrdersCount > 0 && (
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                 activeTab === 'orders' ? 'bg-[#ffdad6] text-[#93000a]' : 'bg-[#171e1e] text-white'
               }`}
             >
               대기 {receivedOrdersCount + arrivedOrdersCount}건
-            </span>
-          ) : (
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full ${
-                activeTab === 'orders' ? 'bg-white/20 text-white' : 'bg-[#e4e2dd] text-[#434848]'
-              }`}
-            >
-              {totalOrdersCount}건
             </span>
           )}
         </button>

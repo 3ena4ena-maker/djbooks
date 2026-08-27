@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BookWithStock, InventoryFilter, InventorySort, CustomerOrder, CustomerOrderStatus } from '../types';
+import { BookWithStock, InventoryFilter, InventorySort, CustomerOrder, CustomerOrderStatus, ViewType } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
@@ -38,10 +38,12 @@ interface InventoryViewProps {
   initialFilter?: InventoryFilter;
   searchQuery?: string;
   onShowToast: (message: string) => void;
+  initialTab?: 'books' | 'orders';
+  onNavigate?: (view: ViewType) => void;
 }
 
 type MainTabType = 'books' | 'orders';
-type OrderFilterType = 'all' | 'pending' | '주문접수' | '입고완료' | '수령대기' | '수령완료' | '취소됨';
+type OrderFilterType = 'all' | '주문접수' | '입고완료' | '수령완료' | '취소됨';
 
 export const InventoryView: React.FC<InventoryViewProps> = ({
   onSelectBook,
@@ -49,9 +51,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   initialFilter = 'all',
   searchQuery = '',
   onShowToast,
+  initialTab = 'books',
+  onNavigate,
 }) => {
   const [, setTick] = useState(0);
-  const [activeTab, setActiveTab] = useState<MainTabType>('books');
+  const [activeTab, setActiveTab] = useState<MainTabType>(initialTab);
+
+  // Synchronize active tab with initialTab prop when URL/route changes
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   // Inventory state
   const [filter, setFilter] = useState<InventoryFilter>(initialFilter);
@@ -62,7 +71,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [bookToEdit, setBookToEdit] = useState<BookWithStock | null>(null);
 
   // Customer Orders state
-  const [orderFilter, setOrderFilter] = useState<OrderFilterType>('pending');
+  const [orderFilter, setOrderFilter] = useState<OrderFilterType>('all');
   const [orderSearch, setOrderSearch] = useState<string>('');
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<CustomerOrder | null>(null);
@@ -78,9 +87,20 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const settings = inventoryStore.getSettings();
   const allBooks = inventoryStore.getBooksWithStock();
   const allOrders = inventoryStore.getCustomerOrders();
-  const orderStats = inventoryStore.getCustomerOrderStats();
 
-  // Books Filter logic
+  // Books Count Statistics
+  const totalBooksCount = allBooks.length;
+  const inStockBooksCount = allBooks.filter((b) => b.quantity > 0).length;
+  const outOfStockBooksCount = allBooks.filter((b) => b.quantity <= 0).length;
+
+  // Orders Count Statistics
+  const totalOrdersCount = allOrders.length;
+  const receivedOrdersCount = allOrders.filter((o) => o.status === '주문접수').length;
+  const arrivedOrdersCount = allOrders.filter((o) => o.status === '입고완료' || o.status === '수령대기').length;
+  const completedOrdersCount = allOrders.filter((o) => o.status === '수령완료').length;
+  const cancelledOrdersCount = allOrders.filter((o) => o.status === '취소됨').length;
+
+  // Books Filter logic (재고 수량 > 0 -> 재고 있음 / 재고 수량 = 0 -> 품절)
   const filteredBooks = allBooks.filter((book) => {
     // Search query
     if (search.trim()) {
@@ -96,10 +116,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
     // Status filter
     if (filter === 'in_stock') {
-      return book.quantity > settings.lowStockThreshold;
-    }
-    if (filter === 'low_stock') {
-      return book.quantity > 0 && book.quantity <= settings.lowStockThreshold;
+      return book.quantity > 0;
     }
     if (filter === 'out_of_stock') {
       return book.quantity <= 0;
@@ -132,11 +149,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       }
     }
 
-    if (orderFilter === 'pending') {
-      return order.status === '주문접수' || order.status === '입고완료' || order.status === '수령대기';
-    }
     if (orderFilter === 'all') {
       return true;
+    }
+    if (orderFilter === '입고완료') {
+      return order.status === '입고완료' || order.status === '수령대기';
     }
     return order.status === orderFilter;
   });
@@ -303,29 +320,35 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         </div>
       </div>
 
-      {/* Main Top Navigation Tabs: [ 📚 도서 재고 ] vs [ 📦 주문건 ] */}
+      {/* Main Top Navigation Tabs: [ 📦 재고관리 ] vs [ 🛒 주문건 ] */}
       <div className="flex items-center gap-2 border-b border-[#c3c7c7]/60 pb-1">
         <button
-          onClick={() => setActiveTab('books')}
+          onClick={() => {
+            setActiveTab('books');
+            if (onNavigate) onNavigate('inventory');
+          }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
             activeTab === 'books'
               ? 'bg-[#171e1e] text-white shadow-xs'
               : 'text-[#434848] hover:text-[#171e1e] hover:bg-[#f0eee9]'
           }`}
         >
-          <Library className="w-4 h-4" />
-          <span>도서 재고</span>
+          <Package className="w-4 h-4" />
+          <span>재고관리</span>
           <span
             className={`text-xs px-2 py-0.5 rounded-full ${
               activeTab === 'books' ? 'bg-white/20 text-white' : 'bg-[#e4e2dd] text-[#434848]'
             }`}
           >
-            {totalStockCount}권
+            {totalBooksCount}종
           </span>
         </button>
 
         <button
-          onClick={() => setActiveTab('orders')}
+          onClick={() => {
+            setActiveTab('orders');
+            if (onNavigate) onNavigate('orders');
+          }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer relative ${
             activeTab === 'orders'
               ? 'bg-[#171e1e] text-white shadow-xs'
@@ -334,13 +357,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         >
           <ClipboardList className="w-4 h-4" />
           <span>주문건</span>
-          {orderStats.pending > 0 ? (
+          {receivedOrdersCount + arrivedOrdersCount > 0 ? (
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                 activeTab === 'orders' ? 'bg-[#ffdad6] text-[#93000a]' : 'bg-[#171e1e] text-white'
               }`}
             >
-              대기 {orderStats.pending}건
+              대기 {receivedOrdersCount + arrivedOrdersCount}건
             </span>
           ) : (
             <span
@@ -348,26 +371,25 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 activeTab === 'orders' ? 'bg-white/20 text-white' : 'bg-[#e4e2dd] text-[#434848]'
               }`}
             >
-              {allOrders.length}건
+              {totalOrdersCount}건
             </span>
           )}
         </button>
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: 📚 도서 재고 목록 (BOOKS INVENTORY) */}
+      {/* TAB 1: 📦 도서 재고 목록 (BOOKS INVENTORY) */}
       {/* ========================================================================= */}
       {activeTab === 'books' && (
         <div className="space-y-6">
           {/* Filter and Sort Bar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
-            {/* Filter Chips */}
+            {/* Filter Chips: 전체 / 🟢 재고 있음 / 🔴 품절 */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
               {[
-                { id: 'all', label: '전체' },
-                { id: 'in_stock', label: '재고 있음' },
-                { id: 'low_stock', label: '재고 부족' },
-                { id: 'out_of_stock', label: '품절' },
+                { id: 'all', label: `전체 ${totalBooksCount}` },
+                { id: 'in_stock', label: `🟢 재고 있음 ${inStockBooksCount}` },
+                { id: 'out_of_stock', label: `🔴 품절 ${outOfStockBooksCount}` },
               ].map((item) => {
                 const isSelected = filter === item.id;
                 return (
@@ -628,22 +650,20 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: 📦 손님 주문받은 책 (CUSTOMER ORDERS VIEW) */}
+      {/* TAB 2: 🛒 손님 주문관리 (CUSTOMER ORDERS VIEW) */}
       {/* ========================================================================= */}
       {activeTab === 'orders' && (
         <div className="space-y-6">
           {/* Order Filter and Search Bar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
-            {/* Filter Chips */}
+            {/* Filter Chips: 전체 / 🟠 주문접수 / 🔵 입고완료 / 🟢 수령완료 / ⚫ 취소 */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
               {[
-                { id: 'pending', label: `진행 중 (${orderStats.pending})` },
-                { id: 'all', label: `전체 (${orderStats.total})` },
-                { id: '주문접수', label: '📝 주문접수' },
-                { id: '입고완료', label: '📦 입고완료' },
-                { id: '수령대기', label: '🔔 수령대기' },
-                { id: '수령완료', label: '✨ 수령완료' },
-                { id: '취소됨', label: '❌ 취소됨' },
+                { id: 'all', label: `전체 ${totalOrdersCount}` },
+                { id: '주문접수', label: `🟠 주문접수 ${receivedOrdersCount}` },
+                { id: '입고완료', label: `🔵 입고완료 ${arrivedOrdersCount}` },
+                { id: '수령완료', label: `🟢 수령완료 ${completedOrdersCount}` },
+                { id: '취소됨', label: `⚫ 취소 ${cancelledOrdersCount}` },
               ].map((item) => {
                 const isSelected = orderFilter === item.id;
                 return (

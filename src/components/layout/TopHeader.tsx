@@ -51,6 +51,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const viewTitleMap: Record<ViewType, string> = {
     dashboard: '홈',
     inventory: '도서 재고',
+    orders: '주문건 관리',
     scanner: '바코드 스캔',
     history: '재고 기록',
     settings: '서점 설정',

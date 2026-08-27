@@ -45,7 +45,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
         {items.map((item) => {
           const isActive =
             currentView === item.id ||
-            (currentView === 'detail' && item.id === 'inventory');
+            ((currentView === 'detail' || currentView === 'orders') && item.id === 'inventory');
 
           const isScan = item.id === 'scanner';
 

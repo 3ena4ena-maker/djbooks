@@ -1234,6 +1234,7 @@ class InventoryStore {
   }
 
   public deleteCustomerOrder(orderId: string): boolean {
+    const previousOrders = [...this.orders];
     const prevLength = this.orders.length;
     this.orders = this.orders.filter((o) => o.id !== orderId);
     if (this.orders.length !== prevLength) {
@@ -1242,14 +1243,44 @@ class InventoryStore {
       if (isSupabaseConfigured) {
         (async () => {
           try {
-            const { data, error } = await supabase.from('customer_orders').delete().eq('id', orderId);
+            const { data, error } = await supabase
+              .from('customer_orders')
+              .delete()
+              .eq('id', orderId)
+              .select();
+
             if (error) {
-              console.error('[InventoryStore] Supabase customer_orders DELETE 실패:', error);
+              console.error('[InventoryStore] Supabase customer_orders DELETE 실패:', {
+                orderId,
+                code: error.code,
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+              });
+              // Supabase 삭제 실패 시 로컬 상태 롤백
+              this.orders = previousOrders;
+              this.saveToStorage();
+              this.fetchFromSupabase();
+            } else if (!data || data.length === 0) {
+              console.warn('[InventoryStore] Supabase customer_orders DELETE: 삭제된 DB 행(row)이 0건입니다.', {
+                orderId,
+                possibleCause: 'Supabase RLS DELETE 정책 부재(미허용) 또는 DB에 해당 orderId 행이 없음',
+              });
             } else {
-              console.log('[InventoryStore] Supabase customer_orders DELETE 성공:', orderId, data);
+              console.log('[InventoryStore] Supabase customer_orders DELETE 성공:', {
+                orderId,
+                deletedCount: data.length,
+                deletedData: data,
+              });
             }
           } catch (e) {
-            console.error('[InventoryStore] Supabase customer_orders DELETE 예외 발생:', e);
+            console.error('[InventoryStore] Supabase customer_orders DELETE 예외 발생:', {
+              orderId,
+              error: e,
+            });
+            // 예외 발생 시 로컬 상태 롤백
+            this.orders = previousOrders;
+            this.saveToStorage();
           }
         })();
       }

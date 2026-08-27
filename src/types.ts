@@ -74,7 +74,7 @@ export interface BookWithStock extends Book {
   quantity: number;
 }
 
-export type ViewType = 'dashboard' | 'scanner' | 'inventory' | 'detail' | 'history' | 'settings';
+export type ViewType = 'dashboard' | 'scanner' | 'inventory' | 'orders' | 'detail' | 'history' | 'settings';
 
 export type InventoryFilter = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
 export type InventorySort = 'updated' | 'stock_asc' | 'stock_desc' | 'title' | 'price_desc';

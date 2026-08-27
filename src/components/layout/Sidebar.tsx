@@ -96,7 +96,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Nav List */}
       <nav className="flex flex-col gap-1.5 flex-grow overflow-y-auto">
         {navItems.map((item) => {
-          const isActive = currentView === item.id || (currentView === 'detail' && item.id === 'inventory');
+          const isActive =
+            currentView === item.id ||
+            ((currentView === 'detail' || currentView === 'orders') && item.id === 'inventory');
           return (
             <button
               key={item.id}

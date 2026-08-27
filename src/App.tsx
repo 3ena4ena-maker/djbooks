@@ -15,20 +15,25 @@ import { QuickRestockModal } from './components/modals/QuickRestockModal';
 import { Toast } from './components/common/Toast';
 
 export default function App() {
-  // Parse current route from window location hash
+  // Parse current route from window location hash or pathname fallback
   const parseHashRoute = (): { view: ViewType; bookId: string | null } => {
     const hash = window.location.hash.replace(/^#\/?/, '').trim();
-    if (!hash || hash === 'dashboard' || hash === 'home') {
+    // Pathname fallback if user navigates with direct path (e.g. /orders, /inventory)
+    const path = window.location.pathname.replace(/^\//, '').trim();
+    const route = hash || path;
+
+    if (!route || route === 'dashboard' || route === 'home') {
       return { view: 'dashboard', bookId: null };
     }
-    if (hash.startsWith('book/') || hash.startsWith('detail/')) {
-      const bookId = hash.split('/')[1] || null;
+    if (route.startsWith('book/') || route.startsWith('detail/')) {
+      const bookId = route.split('/')[1] || null;
       return { view: 'detail', bookId };
     }
-    if (hash === 'inventory') return { view: 'inventory', bookId: null };
-    if (hash === 'scanner' || hash === 'scan') return { view: 'scanner', bookId: null };
-    if (hash === 'history' || hash === 'logs') return { view: 'history', bookId: null };
-    if (hash === 'settings') return { view: 'settings', bookId: null };
+    if (route === 'inventory' || route === 'stock') return { view: 'inventory', bookId: null };
+    if (route === 'orders' || route === 'order' || route === 'customer_orders') return { view: 'orders', bookId: null };
+    if (route === 'scanner' || route === 'scan') return { view: 'scanner', bookId: null };
+    if (route === 'history' || route === 'logs') return { view: 'history', bookId: null };
+    if (route === 'settings') return { view: 'settings', bookId: null };
     return { view: 'dashboard', bookId: null };
   };
 
@@ -160,13 +165,15 @@ export default function App() {
               />
             )}
 
-            {currentView === 'inventory' && (
+            {(currentView === 'inventory' || currentView === 'orders') && (
               <InventoryView
                 onSelectBook={handleSelectBook}
                 onOpenAddBook={() => setIsAddBookOpen(true)}
                 initialFilter={inventoryFilter}
                 searchQuery={searchQuery}
                 onShowToast={showToast}
+                initialTab={currentView === 'orders' ? 'orders' : 'books'}
+                onNavigate={handleNavigate}
               />
             )}
 

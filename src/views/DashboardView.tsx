@@ -408,6 +408,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <Plus className="w-3.5 h-3.5" />
                   <span>주문 등록</span>
                 </button>
+
+                {/* Go to full Orders View */}
+                <button
+                  onClick={() => onNavigate('orders')}
+                  title="주문건 전체 관리 페이지로 이동"
+                  className="px-2.5 py-1.5 bg-white border border-[#c3c7c7] text-[#171e1e] rounded-xl text-xs font-bold hover:bg-[#f0eee9] transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 flex-shrink-0"
+                >
+                  <span>전체 관리</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[#737878]" />
+                </button>
               </div>
             </div>
 

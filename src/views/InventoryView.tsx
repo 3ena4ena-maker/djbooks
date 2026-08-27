@@ -225,11 +225,17 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setBookToDelete(null);
   };
 
-  const handleQuickOrderStatusChange = (e: React.MouseEvent, order: CustomerOrder, nextStatus: CustomerOrderStatus) => {
+  const handleQuickOrderStatusChange = async (e: React.MouseEvent, order: CustomerOrder, nextStatus: CustomerOrderStatus) => {
     e.stopPropagation();
-    inventoryStore.updateCustomerOrderStatus(order.id, nextStatus);
     feedback.playBeep('success');
-    onShowToast(`'${order.customerName}'님의 주문 상태가 '${nextStatus}'(으)로 변경되었습니다.`);
+    onShowToast(`'${order.customerName}'님의 주문 상태를 '${nextStatus}'(으)로 변경 중...`);
+    const success = await inventoryStore.updateCustomerOrderStatus(order.id, nextStatus);
+    if (success) {
+      onShowToast(`'${order.customerName}'님의 주문 상태가 '${nextStatus}'(으)로 저장되었습니다.`);
+    } else {
+      feedback.playBeep('warning');
+      onShowToast(`'${order.customerName}'님의 주문 상태 변경에 실패하여 이전 상태로 되돌렸습니다.`);
+    }
   };
 
   const handleConfirmDeleteOrder = () => {

@@ -144,14 +144,14 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bookTitle.trim() || !customerName.trim()) {
       return;
     }
 
     if (isEditing && order) {
-      inventoryStore.updateCustomerOrder(order.id, {
+      const ok = await inventoryStore.updateCustomerOrder(order.id, {
         bookTitle: bookTitle.trim(),
         bookAuthor: bookAuthor.trim(),
         bookPublisher: bookPublisher.trim(),
@@ -165,8 +165,13 @@ export const CustomerOrderModal: React.FC<CustomerOrderModalProps> = ({
         note: note.trim(),
         orderDate,
       });
-      feedback.playBeep('success');
-      onSuccess(`'${customerName}'님의 '${bookTitle}' 주문 정보가 수정되었습니다.`);
+      if (ok) {
+        feedback.playBeep('success');
+        onSuccess(`'${customerName}'님의 '${bookTitle}' 주문 정보가 수정되었습니다.`);
+      } else {
+        feedback.playBeep('warning');
+        onSuccess(`'${customerName}'님의 주문 정보 저장에 실패했습니다.`);
+      }
     } else {
       inventoryStore.addCustomerOrder({
         bookTitle: bookTitle.trim(),

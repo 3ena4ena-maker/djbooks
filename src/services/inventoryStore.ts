@@ -1132,9 +1132,14 @@ class InventoryStore {
     return newOrder;
   }
 
-  public updateCustomerOrderStatus(orderId: string, status: CustomerOrderStatus): boolean {
+  public async updateCustomerOrderStatus(orderId: string, status: CustomerOrderStatus): Promise<boolean> {
+    console.log('[InventoryStore] 1. UPDATE 시작 (updateCustomerOrderStatus):', { orderId, targetStatus: status });
+
     const orderIndex = this.orders.findIndex((o) => o.id === orderId);
-    if (orderIndex === -1) return false;
+    if (orderIndex === -1) {
+      console.warn('[InventoryStore] 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
+      return false;
+    }
 
     const previousOrders = [...this.orders];
     const existing = this.orders[orderIndex];
@@ -1144,72 +1149,102 @@ class InventoryStore {
         ? (existing.completedAt || now)
         : (status === '취소됨' ? undefined : existing.completedAt);
 
+    // 1. 화면 즉시 반영을 위한 Optimistic Update
     this.orders[orderIndex] = {
       ...existing,
       status,
       completedAt,
     };
-    this.saveToStorage();
     this.notify();
 
+    // 2. Supabase DB 영구 저장 및 실제 반영 확인
     if (isSupabaseConfigured) {
-      (async () => {
-        try {
-          const { data, error } = await supabase
-            .from('customer_orders')
-            .update({
-              status,
-              completed_at: completedAt || null,
-            })
-            .eq('id', orderId)
-            .select();
+      try {
+        const updatePayload = {
+          status,
+          completed_at: completedAt || null,
+        };
 
-          if (error) {
-            console.error('[InventoryStore] Supabase customer_orders UPDATE 실패:', {
-              orderId,
-              newStatus: status,
-              code: error.code,
-              message: error.message,
-              details: error.details,
-              hint: error.hint,
-            });
-            // Supabase UPDATE 실패 시 로컬 상태 롤백
-            this.orders = previousOrders;
-            this.saveToStorage();
-            this.notify();
-          } else if (!data || data.length === 0) {
-            console.warn('[InventoryStore] Supabase customer_orders UPDATE: 수정된 DB 행(row)이 0건입니다.', {
-              orderId,
-              newStatus: status,
-              possibleCause: 'Supabase RLS UPDATE 정책 부재(미허용) 또는 DB에 해당 orderId 행이 없음',
-            });
-          } else {
-            console.log('[InventoryStore] Supabase customer_orders UPDATE 성공:', {
-              orderId,
-              newStatus: status,
-              data,
-            });
-          }
-        } catch (e) {
-          console.error('[InventoryStore] Supabase customer_orders UPDATE 예외 발생:', {
+        const { data, error } = await supabase
+          .from('customer_orders')
+          .update(updatePayload)
+          .eq('id', orderId)
+          .select();
+
+        console.log('[InventoryStore] 2. UPDATE 결과 응답:', { orderId, targetStatus: status, data, error });
+
+        if (error) {
+          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 실패 (에러 발생):', {
             orderId,
-            newStatus: status,
-            error: e,
+            targetStatus: status,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
           });
-          // 예외 발생 시 로컬 상태 롤백
+          // 실패 시 optimistic update 롤백 (화면 및 로컬 스토리지에 실패 상태를 남기지 않음)
           this.orders = previousOrders;
           this.saveToStorage();
           this.notify();
+          return false;
         }
-      })();
-    }
 
-    return true;
+        if (!data || data.length === 0) {
+          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 실패 (수정된 row 0건 - RLS 정책 미허용 또는 대상 row 부재):', {
+            orderId,
+            targetStatus: status,
+          });
+          this.orders = previousOrders;
+          this.saveToStorage();
+          this.notify();
+          return false;
+        }
+
+        const updatedRow = data[0];
+        console.log('[InventoryStore] 3. 수정된 row 확인:', updatedRow);
+
+        // 4. DB 상태 검증: 반환된 row의 status가 요청한 status와 일치하는지 확인
+        if (updatedRow.status !== status) {
+          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 검증 실패 (status 불일치):', {
+            expected: status,
+            actual: updatedRow.status,
+          });
+          this.orders = previousOrders;
+          this.saveToStorage();
+          this.notify();
+          return false;
+        }
+
+        console.log('[InventoryStore] 4. DB 상태 검증 통과 -> 5. 최종 성공 완료:', { orderId, finalStatus: updatedRow.status });
+        // 성공한 경우에만 localStorage에 최종 상태 저장
+        this.saveToStorage();
+        return true;
+      } catch (e) {
+        console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 예외 발생:', {
+          orderId,
+          targetStatus: status,
+          error: e,
+        });
+        this.orders = previousOrders;
+        this.saveToStorage();
+        this.notify();
+        return false;
+      }
+    } else {
+      console.warn('[InventoryStore] Supabase 미연결 상태 - 로컬 스토리지에만 저장');
+      this.saveToStorage();
+      return true;
+    }
   }
 
-  public updateCustomerOrder(orderId: string, updates: Partial<CustomerOrder>): boolean {
+  public async updateCustomerOrder(orderId: string, updates: Partial<CustomerOrder>): Promise<boolean> {
+    console.log('[InventoryStore] 1. UPDATE 시작 (updateCustomerOrder 전체):', { orderId, updates });
+
     const orderIndex = this.orders.findIndex((o) => o.id === orderId);
-    if (orderIndex === -1) return false;
+    if (orderIndex === -1) {
+      console.warn('[InventoryStore] 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
+      return false;
+    }
 
     const previousOrders = [...this.orders];
     const existing = this.orders[orderIndex];
@@ -1218,86 +1253,105 @@ class InventoryStore {
     const completedAt =
       nextStatus === '수령완료'
         ? (updates.completedAt ?? existing.completedAt ?? now)
-        : updates.completedAt;
+        : (nextStatus === '취소됨' ? undefined : (updates.completedAt ?? existing.completedAt));
 
+    // 1. Optimistic Update
     this.orders[orderIndex] = {
       ...existing,
       ...updates,
       completedAt,
     };
-    this.saveToStorage();
     this.notify();
 
     if (isSupabaseConfigured) {
-      (async () => {
-        try {
-          const payload: Record<string, unknown> = {};
-          if (updates.customerName !== undefined) payload.customer_name = updates.customerName;
-          if (updates.customerContact !== undefined) payload.contact = updates.customerContact;
-          if (updates.bookTitle !== undefined) payload.book_title = updates.bookTitle;
-          if (updates.bookAuthor !== undefined) payload.book_author = updates.bookAuthor || null;
-          if (updates.bookPublisher !== undefined) payload.publisher = updates.bookPublisher || null;
-          if (updates.isbn !== undefined) payload.isbn = updates.isbn || null;
-          if (updates.quantity !== undefined) payload.quantity = updates.quantity;
-          if (updates.orderType !== undefined) payload.order_type = updates.orderType;
-          if (updates.depositAmount !== undefined) {
-            payload.deposit_amount = updates.depositAmount;
-          } else if (updates.depositPaid !== undefined) {
-            payload.deposit_amount = updates.depositPaid ? (updates.orderPrice ?? existing.orderPrice ?? 0) : 0;
-            payload.deposit_method = updates.depositPaid ? 'CARD' : 'NONE';
-          }
-          if (updates.depositMethod !== undefined) payload.deposit_method = updates.depositMethod;
-          if (updates.orderPrice !== undefined) payload.total_price = updates.orderPrice;
-          if (updates.status !== undefined) payload.status = updates.status;
-          if (updates.note !== undefined) payload.memo = updates.note || null;
-          if (completedAt !== undefined) payload.completed_at = completedAt || null;
+      try {
+        const payload: Record<string, unknown> = {};
+        if (updates.customerName !== undefined) payload.customer_name = updates.customerName;
+        if (updates.customerContact !== undefined) payload.contact = updates.customerContact;
+        if (updates.bookTitle !== undefined) payload.book_title = updates.bookTitle;
+        if (updates.bookAuthor !== undefined) payload.book_author = updates.bookAuthor || null;
+        if (updates.bookPublisher !== undefined) payload.publisher = updates.bookPublisher || null;
+        if (updates.isbn !== undefined) payload.isbn = updates.isbn || null;
+        if (updates.quantity !== undefined) payload.quantity = updates.quantity;
+        if (updates.orderType !== undefined) payload.order_type = updates.orderType;
+        if (updates.depositAmount !== undefined) {
+          payload.deposit_amount = updates.depositAmount;
+        } else if (updates.depositPaid !== undefined) {
+          payload.deposit_amount = updates.depositPaid ? (updates.orderPrice ?? existing.orderPrice ?? 0) : 0;
+          payload.deposit_method = updates.depositPaid ? 'CARD' : 'NONE';
+        }
+        if (updates.depositMethod !== undefined) payload.deposit_method = updates.depositMethod;
+        if (updates.orderPrice !== undefined) payload.total_price = updates.orderPrice;
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (updates.note !== undefined) payload.memo = updates.note || null;
+        if (completedAt !== undefined) payload.completed_at = completedAt || null;
 
-          const { data, error } = await supabase
-            .from('customer_orders')
-            .update(payload)
-            .eq('id', orderId)
-            .select();
+        const { data, error } = await supabase
+          .from('customer_orders')
+          .update(payload)
+          .eq('id', orderId)
+          .select();
 
-          if (error) {
-            console.error('[InventoryStore] Supabase customer_orders 전체 UPDATE 실패:', {
-              orderId,
-              updates,
-              code: error.code,
-              message: error.message,
-              details: error.details,
-              hint: error.hint,
-            });
-            // Supabase UPDATE 실패 시 로컬 상태 롤백
-            this.orders = previousOrders;
-            this.saveToStorage();
-            this.notify();
-          } else if (!data || data.length === 0) {
-            console.warn('[InventoryStore] Supabase customer_orders 전체 UPDATE: 수정된 DB 행(row)이 0건입니다.', {
-              orderId,
-              updates,
-              possibleCause: 'Supabase RLS UPDATE 정책 부재(미허용) 또는 DB에 해당 orderId 행이 없음',
-            });
-          } else {
-            console.log('[InventoryStore] Supabase customer_orders 전체 UPDATE 성공:', {
-              orderId,
-              data,
-            });
-          }
-        } catch (e) {
-          console.error('[InventoryStore] Supabase customer_orders 전체 UPDATE 예외 발생:', {
+        console.log('[InventoryStore] 2. UPDATE 결과 응답 (전체):', { orderId, payload, data, error });
+
+        if (error) {
+          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 실패:', {
             orderId,
             updates,
-            error: e,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
           });
-          // 예외 발생 시 로컬 상태 롤백
           this.orders = previousOrders;
           this.saveToStorage();
           this.notify();
+          return false;
         }
-      })();
-    }
 
-    return true;
+        if (!data || data.length === 0) {
+          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 실패 (수정된 row 0건):', {
+            orderId,
+            updates,
+          });
+          this.orders = previousOrders;
+          this.saveToStorage();
+          this.notify();
+          return false;
+        }
+
+        const updatedRow = data[0];
+        console.log('[InventoryStore] 3. 수정된 row 확인 (전체):', updatedRow);
+
+        if (updates.status && updatedRow.status !== updates.status) {
+          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 검증 실패 (status 불일치):', {
+            expected: updates.status,
+            actual: updatedRow.status,
+          });
+          this.orders = previousOrders;
+          this.saveToStorage();
+          this.notify();
+          return false;
+        }
+
+        console.log('[InventoryStore] 4. DB 상태 검증 통과 -> 5. 최종 성공 완료 (전체)');
+        this.saveToStorage();
+        return true;
+      } catch (e) {
+        console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 예외 발생:', {
+          orderId,
+          updates,
+          error: e,
+        });
+        this.orders = previousOrders;
+        this.saveToStorage();
+        this.notify();
+        return false;
+      }
+    } else {
+      this.saveToStorage();
+      return true;
+    }
   }
 
   public deleteCustomerOrder(orderId: string): boolean {

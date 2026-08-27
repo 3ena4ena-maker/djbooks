@@ -1137,7 +1137,7 @@ class InventoryStore {
 
     const orderIndex = this.orders.findIndex((o) => o.id === orderId);
     if (orderIndex === -1) {
-      console.warn('[InventoryStore] 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
+      console.warn('[InventoryStore] ❌ 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
       return false;
     }
 
@@ -1149,15 +1149,7 @@ class InventoryStore {
         ? (existing.completedAt || now)
         : (status === '취소됨' ? undefined : existing.completedAt);
 
-    // 1. 화면 즉시 반영을 위한 Optimistic Update
-    this.orders[orderIndex] = {
-      ...existing,
-      status,
-      completedAt,
-    };
-    this.notify();
-
-    // 2. Supabase DB 영구 저장 및 실제 반영 확인
+    // Supabase DB 영구 저장 및 실제 반영 확인
     if (isSupabaseConfigured) {
       try {
         const updatePayload = {
@@ -1182,21 +1174,15 @@ class InventoryStore {
             details: error.details,
             hint: error.hint,
           });
-          // 실패 시 optimistic update 롤백 (화면 및 로컬 스토리지에 실패 상태를 남기지 않음)
-          this.orders = previousOrders;
-          this.saveToStorage();
-          this.notify();
           return false;
         }
 
         if (!data || data.length === 0) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 실패 (수정된 row 0건 - RLS 정책 미허용 또는 대상 row 부재):', {
+          console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 실패 (수정된 row 0건 - RLS UPDATE 정책 미허용 또는 대상 orderId row 부재):', {
             orderId,
             targetStatus: status,
+            possibleRLSNotice: 'Supabase SQL Editor에서 customer_orders 테이블에 anon/authenticated UPDATE 정책(allow all)을 확인해주세요.',
           });
-          this.orders = previousOrders;
-          this.saveToStorage();
-          this.notify();
           return false;
         }
 
@@ -1209,15 +1195,19 @@ class InventoryStore {
             expected: status,
             actual: updatedRow.status,
           });
-          this.orders = previousOrders;
-          this.saveToStorage();
-          this.notify();
           return false;
         }
 
         console.log('[InventoryStore] 4. DB 상태 검증 통과 -> 5. 최종 성공 완료:', { orderId, finalStatus: updatedRow.status });
-        // 성공한 경우에만 localStorage에 최종 상태 저장
+
+        // DB UPDATE 성공 시 화면 및 로컬 스토리지 갱신
+        this.orders[orderIndex] = {
+          ...existing,
+          status,
+          completedAt,
+        };
         this.saveToStorage();
+        this.notify();
         return true;
       } catch (e) {
         console.error('[InventoryStore] ❌ Supabase customer_orders UPDATE 예외 발생:', {
@@ -1225,14 +1215,17 @@ class InventoryStore {
           targetStatus: status,
           error: e,
         });
-        this.orders = previousOrders;
-        this.saveToStorage();
-        this.notify();
         return false;
       }
     } else {
       console.warn('[InventoryStore] Supabase 미연결 상태 - 로컬 스토리지에만 저장');
+      this.orders[orderIndex] = {
+        ...existing,
+        status,
+        completedAt,
+      };
       this.saveToStorage();
+      this.notify();
       return true;
     }
   }
@@ -1242,7 +1235,7 @@ class InventoryStore {
 
     const orderIndex = this.orders.findIndex((o) => o.id === orderId);
     if (orderIndex === -1) {
-      console.warn('[InventoryStore] 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
+      console.warn('[InventoryStore] ❌ 로컬 orders에서 orderId를 찾을 수 없음:', orderId);
       return false;
     }
 
@@ -1254,14 +1247,6 @@ class InventoryStore {
       nextStatus === '수령완료'
         ? (updates.completedAt ?? existing.completedAt ?? now)
         : (nextStatus === '취소됨' ? undefined : (updates.completedAt ?? existing.completedAt));
-
-    // 1. Optimistic Update
-    this.orders[orderIndex] = {
-      ...existing,
-      ...updates,
-      completedAt,
-    };
-    this.notify();
 
     if (isSupabaseConfigured) {
       try {
@@ -1303,20 +1288,14 @@ class InventoryStore {
             details: error.details,
             hint: error.hint,
           });
-          this.orders = previousOrders;
-          this.saveToStorage();
-          this.notify();
           return false;
         }
 
         if (!data || data.length === 0) {
-          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 실패 (수정된 row 0건):', {
+          console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 실패 (수정된 row 0건 - RLS UPDATE 정책 미허용 또는 대상 orderId row 부재):', {
             orderId,
             updates,
           });
-          this.orders = previousOrders;
-          this.saveToStorage();
-          this.notify();
           return false;
         }
 
@@ -1328,14 +1307,17 @@ class InventoryStore {
             expected: updates.status,
             actual: updatedRow.status,
           });
-          this.orders = previousOrders;
-          this.saveToStorage();
-          this.notify();
           return false;
         }
 
         console.log('[InventoryStore] 4. DB 상태 검증 통과 -> 5. 최종 성공 완료 (전체)');
+        this.orders[orderIndex] = {
+          ...existing,
+          ...updates,
+          completedAt,
+        };
         this.saveToStorage();
+        this.notify();
         return true;
       } catch (e) {
         console.error('[InventoryStore] ❌ Supabase customer_orders 전체 UPDATE 예외 발생:', {
@@ -1343,13 +1325,16 @@ class InventoryStore {
           updates,
           error: e,
         });
-        this.orders = previousOrders;
-        this.saveToStorage();
-        this.notify();
         return false;
       }
     } else {
+      this.orders[orderIndex] = {
+        ...existing,
+        ...updates,
+        completedAt,
+      };
       this.saveToStorage();
+      this.notify();
       return true;
     }
   }

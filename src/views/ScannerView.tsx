@@ -4,6 +4,7 @@ import { inventoryStore } from '../services/inventoryStore';
 import { authStore } from '../services/authStore';
 import { feedback } from '../utils/feedback';
 import { BookCover } from '../components/common/BookCover';
+import { cleanAndValidateIsbn } from '../utils/isbnValidator';
 import {
   Camera,
   RefreshCw,
@@ -20,7 +21,8 @@ import {
   AlertCircle,
   HelpCircle,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Check
 } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
@@ -43,7 +45,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [showManualInput, setShowManualInput] = useState<boolean>(false);
   const [isScanningFile, setIsScanningFile] = useState<boolean>(false);
 
-  // Scanned results state
+  // Scanned results state (Locked after detection)
   const [scannedIsbn, setScannedIsbn] = useState<string | null>(null);
   const [matchedBook, setMatchedBook] = useState<BookWithStock | null>(null);
   const [isNewBook, setIsNewBook] = useState<boolean>(false);
@@ -60,6 +62,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const isStartingRef = useRef<boolean>(false);
   const isStoppingRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
+  const isScanLockedRef = useRef<boolean>(false);
   const sessionIdRef = useRef<number>(0);
   const scannerContainerId = 'barcode-reader-container';
 
@@ -155,16 +158,14 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
     const formats = [
       Html5QrcodeSupportedFormats.EAN_13,
-      Html5QrcodeSupportedFormats.EAN_8,
       Html5QrcodeSupportedFormats.CODE_128,
-      Html5QrcodeSupportedFormats.CODE_39,
       Html5QrcodeSupportedFormats.UPC_A,
-      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.EAN_8,
       Html5QrcodeSupportedFormats.QR_CODE,
     ];
 
     const config = {
-      fps: 30, // 30 FPS for instant real-time barcode edge detection
+      fps: 25, // 25 FPS for instant real-time barcode edge detection
       disableFlip: false,
       experimentalFeatures: {
         useBarCodeDetectorIfSupported: true, // Native hardware-accelerated BarcodeDetector API
@@ -172,6 +173,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     };
 
     const onScanSuccess = (decodedText: string) => {
+      // If result is already locked, prevent continuous triggering
+      if (isScanLockedRef.current) return;
       handleDetectedBarcode(decodedText);
     };
 
@@ -300,6 +303,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   useEffect(() => {
     isMountedRef.current = true;
+    isScanLockedRef.current = false;
     startScanner();
 
     const unsubAuth = authStore.subscribe(() => {
@@ -313,13 +317,29 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     };
   }, [facingMode]);
 
-  // Handle detected or submitted barcode
+  // Handle detected or submitted barcode with strict ISBN-13 check digit validation & lock
   const handleDetectedBarcode = async (rawIsbn: string) => {
-    const cleanIsbn = inventoryStore.normalizeIsbn(rawIsbn);
-    if (!cleanIsbn) return;
+    const validation = cleanAndValidateIsbn(rawIsbn);
+    if (!validation.isValid || !validation.isbn13) {
+      console.warn('[ScannerView] Invalid ISBN barcode ignored:', rawIsbn, validation.errorReason);
+      return;
+    }
 
-    feedback.playBeep('scan');
+    const cleanIsbn = validation.isbn13;
+
+    // Lock scan immediately to prevent losing results when moving book away from camera
+    isScanLockedRef.current = true;
+    feedback.playBeep('success');
     setScannedIsbn(cleanIsbn);
+
+    // Pause camera stream to save battery and stabilize UI
+    if (qrReaderRef.current?.isScanning) {
+      try {
+        qrReaderRef.current.pause(true);
+      } catch {
+        // Ignore pause warning
+      }
+    }
 
     // Check existing database
     const existing = inventoryStore.getBookByIsbn(cleanIsbn);
@@ -348,32 +368,18 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
     setIsScanningFile(true);
     try {
-      // Create temporary scanner instance for file scanning if needed
-      let scanner = qrReaderRef.current;
-      if (!scanner) {
-        scanner = new Html5Qrcode(scannerContainerId, {
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.QR_CODE,
-          ],
-          verbose: false,
-        });
-      }
+      const html5QrCode = new Html5Qrcode('barcode-file-scanner-temp', { verbose: false });
+      const decodedResult = await html5QrCode.scanFile(file, true);
+      await html5QrCode.clear();
 
-      const decodedResult = await scanner.scanFile(file, true);
       if (decodedResult) {
         handleDetectedBarcode(decodedResult);
-        onShowToast('바코드 사진을 성공적으로 인식했습니다.');
       }
     } catch (err) {
-      console.warn('File scan failed:', err);
+      console.warn('[ScannerView] File scan error:', err);
       feedback.playBeep('warning');
-      onShowToast('사진에서 바코드를 인식하지 못했습니다. 선명한 바코드 사진으로 다시 시도해주세요.');
+      onShowToast('사진에서 유효한 바코드를 인식하지 못했습니다. ISBN을 직접 입력해 보세요.');
+      setShowManualInput(true);
     } finally {
       setIsScanningFile(false);
       if (fileInputRef.current) {
@@ -382,98 +388,105 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
   };
 
-  // Continuous scan: Reset scan overlay and resume camera
+  // Quick Action Handlers for Existing Book
+  const handleQuickRestock = async (book: BookWithStock) => {
+    const res = await inventoryStore.adjustStock(book.id, 1, '입고', '바코드 스캐너 입고 (+1권)');
+    if (res.success) {
+      feedback.playBeep('success');
+      onShowToast(`'${book.title}' 1권이 입고되었습니다.`);
+      const updated = inventoryStore.getBookById(book.id);
+      if (updated) setMatchedBook(updated);
+    } else if (res.error) {
+      feedback.playBeep('warning');
+      onShowToast(res.error);
+    }
+  };
+
+  const handleQuickSell = async (book: BookWithStock) => {
+    if (book.quantity <= 0) {
+      feedback.playBeep('warning');
+      onShowToast('현재 재고가 0권입니다.');
+      return;
+    }
+
+    const res = await inventoryStore.adjustStock(book.id, -1, '판매', '바코드 스캐너 판매 (-1권)');
+    if (res.success) {
+      feedback.playBeep('success');
+      onShowToast(`'${book.title}' 1권이 판매되었습니다.`);
+      const updated = inventoryStore.getBookById(book.id);
+      if (updated) setMatchedBook(updated);
+    } else if (res.error) {
+      feedback.playBeep('warning');
+      onShowToast(res.error);
+    }
+  };
+
+  // Reset lock and scan next book
   const handleNextScan = () => {
-    feedback.playBeep('click');
+    isScanLockedRef.current = false;
     setScannedIsbn(null);
     setMatchedBook(null);
     setIsNewBook(false);
     setNewBookCandidate(null);
+    setNewBookStock(1);
     setManualIsbn('');
 
-    // Ensure scanner is running
-    if (!cameraActive) {
+    feedback.playBeep('click');
+
+    if (qrReaderRef.current?.isScanning) {
+      try {
+        qrReaderRef.current.resume();
+      } catch {
+        startScanner();
+      }
+    } else {
       startScanner();
     }
   };
 
-  // Quick Sell (-1)
-  const handleQuickSell = async (book: BookWithStock) => {
-    if (book.quantity <= 0) {
-      onShowToast('현재 재고가 0권입니다.');
-      feedback.playBeep('warning');
-      return;
-    }
-    const res = await inventoryStore.adjustStock(
-      book.id,
-      -1,
-      '판매',
-      '스캐너 빠른 판매 (-1권)'
-    );
-    if (res.success) {
-      feedback.playBeep('success');
-      const updated = inventoryStore.getBookById(book.id);
-      if (updated) setMatchedBook(updated);
-      onShowToast(`[판매 완료] ${book.title} (남은 재고: ${res.newQuantity}권)`);
-    } else if (res.error) {
-      feedback.playBeep('warning');
-      onShowToast(res.error);
-    }
-  };
-
-  // Quick Restock (+1)
-  const handleQuickRestock = async (book: BookWithStock) => {
-    const res = await inventoryStore.adjustStock(
-      book.id,
-      1,
-      '입고',
-      '스캐너 빠른 입고 (+1권)'
-    );
-    if (res.success) {
-      feedback.playBeep('success');
-      const updated = inventoryStore.getBookById(book.id);
-      if (updated) setMatchedBook(updated);
-      onShowToast(`[입고 완료] ${book.title} (현재 재고: ${res.newQuantity}권)`);
-    } else if (res.error) {
-      feedback.playBeep('warning');
-      onShowToast(res.error);
-    }
-  };
-
-  // Register New Book
+  // Register New Book Handler
   const handleRegisterNewBook = async () => {
-    if (!newBookCandidate || !scannedIsbn) return;
+    if (!scannedIsbn || !newBookCandidate) return;
 
-    const registered = await inventoryStore.registerBook(
-      {
-        isbn: scannedIsbn,
-        title: newBookCandidate.title || `새 도서 (${scannedIsbn})`,
-        author: newBookCandidate.author || '저자 미상',
-        publisher: newBookCandidate.publisher || '독립출판',
-        price: newBookCandidate.price || 15000,
-        category: newBookCandidate.category || '소설',
-        bindingType: newBookCandidate.bindingType || '무선제본',
-        location: newBookCandidate.location || '신간 매대',
-        coverImage:
-          newBookCandidate.coverImage ||
-          'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
-        publishedDate:
-          newBookCandidate.publishedDate ||
-          new Date().toISOString().split('T')[0].replace(/-/g, '.'),
-      },
-      newBookStock,
-      `스캐너 ${newBookEntryType} (${newBookStock}권)`,
-      newBookEntryType
-    );
+    try {
+      const registered = await inventoryStore.registerBook(
+        {
+          isbn: scannedIsbn,
+          title: newBookCandidate.title || `새 도서 (${scannedIsbn})`,
+          author: newBookCandidate.author || '저자 미상',
+          publisher: newBookCandidate.publisher || '독립출판',
+          price: newBookCandidate.price || 15000,
+          category: newBookCandidate.category || '소설',
+          bindingType: newBookCandidate.bindingType || '무선제본',
+          location: newBookCandidate.location || '신간 매대',
+          coverImage:
+            newBookCandidate.coverImage ||
+            'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+          publishedDate:
+            newBookCandidate.publishedDate ||
+            new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+        },
+        newBookStock,
+        `스캐너 ${newBookEntryType} (${newBookStock}권)`,
+        newBookEntryType
+      );
 
-    feedback.playBeep('success');
-    onShowToast(`새로운 도서 '${registered.title}'이(가) 등록되었습니다.`);
-    setMatchedBook(registered);
-    setIsNewBook(false);
+      feedback.playBeep('success');
+      onShowToast(`새로운 도서 '${registered.title}'이(가) 등록되었습니다.`);
+      setMatchedBook(registered);
+      setIsNewBook(false);
+    } catch (e) {
+      console.error('Failed to register book from scanner:', e);
+      feedback.playBeep('warning');
+      onShowToast('도서 등록 중 오류가 발생했습니다.');
+    }
   };
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col min-h-[calc(100vh-8rem)] relative select-none">
+      {/* Hidden container for file scan */}
+      <div id="barcode-file-scanner-temp" className="hidden" />
+
       {/* Hidden File Input for Image/Photo Barcode Scan */}
       <input
         type="file"
@@ -584,7 +597,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         </div>
       )}
 
-      {/* Viewfinder Main Card */}
+      {/* Viewfinder Main Card with Horizontal ISBN-13 Scan Area */}
       <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-black rounded-3xl overflow-hidden shadow-xl border border-[#c3c7c7] flex items-center justify-center">
         {/* Actual HTML5 QR / Barcode Reader element */}
         <div id={scannerContainerId} className="w-full h-full object-cover" />
@@ -602,25 +615,37 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
         {/* Viewfinder Overlay */}
         <div className="absolute inset-0 flex flex-col items-center justify-center p-4 pointer-events-none z-10">
-          <div className="text-white text-center mb-4 drop-shadow-md">
-            <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl font-bold mb-1">
-              책 바코드 스캔
+          <div className="text-white text-center mb-3 drop-shadow-md">
+            <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-lg sm:text-xl font-bold mb-0.5">
+              ISBN-13 바코드 스캔
             </h3>
             <p className="font-['Public_Sans','Noto_Sans_KR',sans-serif] text-xs text-white/90">
-              책 뒷면의 ISBN 13자리 바코드를 사각 프레임 안에 비춰주세요.
+              책 뒷면의 가로형 13자리 바코드를 프레임 중앙에 맞춰주세요.
             </p>
           </div>
 
-          {/* Single Large Target Frame */}
-          <div className="relative w-[88%] max-w-[440px] h-48 sm:h-56 border-2 border-white/60 rounded-3xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] flex items-center justify-center">
+          {/* Horizontal ISBN-13 Scan Frame */}
+          <div className="relative w-[88%] max-w-[400px] h-32 sm:h-36 border-2 border-white/60 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] flex items-center justify-center">
             {/* Bold Corner Accents (Sage Green) */}
-            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-[#d6eaaf] rounded-tl-2xl" />
-            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-[#d6eaaf] rounded-tr-2xl" />
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-[#d6eaaf] rounded-bl-2xl" />
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-[#d6eaaf] rounded-br-2xl" />
+            <div className="absolute top-0 left-0 w-7 h-7 border-t-4 border-l-4 border-[#d6eaaf] rounded-tl-xl" />
+            <div className="absolute top-0 right-0 w-7 h-7 border-t-4 border-r-4 border-[#d6eaaf] rounded-tr-xl" />
+            <div className="absolute bottom-0 left-0 w-7 h-7 border-b-4 border-l-4 border-[#d6eaaf] rounded-bl-xl" />
+            <div className="absolute bottom-0 right-0 w-7 h-7 border-b-4 border-r-4 border-[#d6eaaf] rounded-br-xl" />
 
             {/* Smooth Animated Laser Scanning Line */}
-            <div className="absolute left-3 right-3 h-[2.5px] bg-[#d6eaaf] shadow-[0_0_12px_#d6eaaf] scan-laser-active" />
+            {!scannedIsbn && (
+              <div className="absolute left-3 right-3 h-[2.5px] bg-[#d6eaaf] shadow-[0_0_12px_#d6eaaf] scan-laser-active" />
+            )}
+
+            {/* Lock Badge when recognized */}
+            {scannedIsbn && (
+              <div className="absolute inset-0 bg-[#d6eaaf]/25 backdrop-blur-xs flex items-center justify-center gap-2 text-white font-bold animate-in zoom-in-95">
+                <CheckCircle2 className="w-6 h-6 text-[#d6eaaf]" />
+                <span className="text-[#142000] bg-[#d6eaaf] px-3 py-1 rounded-lg text-xs font-mono font-bold">
+                  {scannedIsbn} 인식 고정됨
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -657,12 +682,23 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         )}
       </div>
 
-      {/* RESULT SLIDE-UP CARD */}
+      {/* RESULT SLIDE-UP CARD (Persistently Locked & Visible) */}
       {scannedIsbn && (
         <div className="mt-4 bg-[#fbf9f4] rounded-3xl border border-[#c3c7c7] shadow-xl p-5 md:p-6 animate-in slide-in-from-bottom-6 duration-200">
-          {/* Drag Handle Decoration */}
-          <div className="w-full flex justify-center pb-3">
-            <div className="w-12 h-1 bg-[#c3c7c7] rounded-full opacity-60" />
+          {/* Header Indicator */}
+          <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#e9e2d1]">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#3c4c20] animate-pulse" />
+              <span className="text-xs font-bold text-[#3c4c20]">
+                ISBN-13 인식 결과 (고정됨)
+              </span>
+            </div>
+            <button
+              onClick={handleNextScan}
+              className="text-xs font-semibold text-[#434848] hover:text-[#171e1e] flex items-center gap-1 bg-[#f0eee9] px-2.5 py-1 rounded-lg border border-[#c3c7c7] cursor-pointer"
+            >
+              <RefreshCw className="w-3 h-3" /> 다시 스캔
+            </button>
           </div>
 
           {/* CASE 1: EXISTING BOOK IN INVENTORY */}

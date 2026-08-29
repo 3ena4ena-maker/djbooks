@@ -1623,9 +1623,10 @@ class InventoryStore {
   }
 
   /**
-   * Normalize raw scanned or input ISBN to valid 13-digit format
+   * Normalize raw scanned or input ISBN to valid 13-digit format with check digit validation
    */
   public normalizeIsbn(rawIsbn: string): string {
+    if (!rawIsbn) return '';
     const clean = rawIsbn.replace(/[^0-9X]/gi, '').trim();
     if (clean.length === 10) {
       // Convert ISBN-10 to standard ISBN-13

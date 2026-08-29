@@ -64,6 +64,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setActiveTab(initialTab);
   }, [initialTab]);
 
+  // Synchronize filter with initialFilter prop
+  useEffect(() => {
+    if (initialFilter) {
+      setFilter(initialFilter);
+    }
+  }, [initialFilter]);
+
   // Inventory state
   const [filter, setFilter] = useState<InventoryFilter>(initialFilter);
   const [sort, setSort] = useState<InventorySort>('updated');
@@ -128,6 +135,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
     if (filter === 'out_of_stock') {
       return book.quantity <= 0;
+    }
+    if (filter === 'low_stock') {
+      return book.quantity <= (settings.lowStockThreshold || 2);
     }
     return true;
   });

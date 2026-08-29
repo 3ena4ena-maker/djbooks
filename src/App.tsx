@@ -134,8 +134,9 @@ export default function App() {
   };
 
   const handleFilterLowStock = () => {
-    setInventoryFilter('low_stock');
+    setInventoryFilter('out_of_stock');
     setCurrentView('inventory');
+    window.location.hash = '#/inventory';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

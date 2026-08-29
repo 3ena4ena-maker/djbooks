@@ -2,10 +2,13 @@ import React, { useRef, useState } from 'react';
 import { UploadCloud, Image as ImageIcon, Camera, Link, X, Sparkles, Check } from 'lucide-react';
 
 interface CoverImageUploaderProps {
-  value: string;
-  onChange: (dataUrlOrUrl: string) => void;
+  value?: string;
+  onChange?: (dataUrlOrUrl: string) => void;
+  currentImage?: string;
+  onImageChange?: (url: string) => void;
   label?: string;
   className?: string;
+  bookTitle?: string;
 }
 
 const PRESET_COVERS = [
@@ -38,11 +41,19 @@ const PRESET_COVERS = [
 export const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
   value,
   onChange,
+  currentImage,
+  onImageChange,
   label = '도서 표지 이미지',
   className = '',
 }) => {
+  const activeValue = currentImage !== undefined ? currentImage : (value || '');
+  const handleValueChange = (newVal: string) => {
+    if (onImageChange) onImageChange(newVal);
+    if (onChange) onChange(newVal);
+  };
+
   const [tab, setTab] = useState<'upload' | 'url' | 'presets'>('upload');
-  const [urlInput, setUrlInput] = useState(value && value.startsWith('http') ? value : '');
+  const [urlInput, setUrlInput] = useState(activeValue && activeValue.startsWith('http') ? activeValue : '');
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,7 +71,7 @@ export const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Target max dimension for book cover (e.g. 800px)
+        // Target max dimension for book cover
         const maxDim = 800;
         let width = img.width;
         let height = img.height;
@@ -82,14 +93,14 @@ export const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
           const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          onChange(dataUrl);
+          handleValueChange(dataUrl);
         } else {
-          onChange(event.target?.result as string);
+          handleValueChange(event.target?.result as string);
         }
         setIsProcessing(false);
       };
       img.onerror = () => {
-        onChange(event.target?.result as string);
+        handleValueChange(event.target?.result as string);
         setIsProcessing(false);
       };
       img.src = event.target?.result as string;
@@ -132,75 +143,75 @@ export const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
 
   const handleApplyUrl = () => {
     if (urlInput.trim()) {
-      onChange(urlInput.trim());
+      handleValueChange(urlInput.trim());
     }
   };
 
   const handleRemoveCover = () => {
-    onChange('');
+    handleValueChange('');
     setUrlInput('');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
   return (
-    <div className={`space-y-2.5 font-['Public_Sans','Noto_Sans_KR',sans-serif] ${className}`}>
-      <div className="flex items-center justify-between">
-        <label className="text-xs font-bold text-[#434848] uppercase tracking-wider">
+    <div className={`w-full max-w-full box-border space-y-2 font-['Public_Sans','Noto_Sans_KR',sans-serif] ${className}`}>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-bold text-[#434848] uppercase tracking-wider truncate">
           {label}
         </label>
-        <span className="text-[11px] text-[#737878]">독립출판물 직접 촬영 / 파일 첨부 가능</span>
+        <span className="text-[11px] text-[#737878] shrink-0">촬영 / 파일 / URL</span>
       </div>
 
-      <div className="bg-[#fbf9f4] p-3.5 rounded-2xl border border-[#c3c7c7] space-y-3">
-        {/* Mode Selector Tabs */}
-        <div className="flex bg-[#f0eee9] p-1 rounded-xl gap-1 text-xs">
+      <div className="bg-[#fbf9f4] p-3 sm:p-3.5 rounded-2xl border border-[#c3c7c7] space-y-3 w-full box-border">
+        {/* Mode Selector Tabs (Mobile 1-row scroll or wrap safe) */}
+        <div className="grid grid-cols-3 bg-[#f0eee9] p-1 rounded-xl gap-1 text-[11px] sm:text-xs">
           <button
             type="button"
             onClick={() => setTab('upload')}
-            className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-1.5 px-1 sm:px-2 rounded-lg font-semibold flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer truncate ${
               tab === 'upload'
                 ? 'bg-white text-[#171e1e] shadow-xs'
                 : 'text-[#737878] hover:text-[#171e1e]'
             }`}
           >
-            <UploadCloud className="w-3.5 h-3.5" />
-            <span>파일 업로드 / 촬영</span>
+            <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">파일/촬영</span>
           </button>
           <button
             type="button"
             onClick={() => setTab('url')}
-            className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-1.5 px-1 sm:px-2 rounded-lg font-semibold flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer truncate ${
               tab === 'url'
                 ? 'bg-white text-[#171e1e] shadow-xs'
                 : 'text-[#737878] hover:text-[#171e1e]'
             }`}
           >
-            <Link className="w-3.5 h-3.5" />
-            <span>웹 URL 입력</span>
+            <Link className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">웹 URL</span>
           </button>
           <button
             type="button"
             onClick={() => setTab('presets')}
-            className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-1.5 px-1 sm:px-2 rounded-lg font-semibold flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer truncate ${
               tab === 'presets'
                 ? 'bg-white text-[#171e1e] shadow-xs'
                 : 'text-[#737878] hover:text-[#171e1e]'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5 text-[#8ea06b]" />
-            <span>추천 표지</span>
+            <Sparkles className="w-3.5 h-3.5 text-[#8ea06b] shrink-0" />
+            <span className="truncate">추천 표지</span>
           </button>
         </div>
 
-        {/* Current Preview & Control Area */}
-        <div className="flex flex-col sm:flex-row gap-4 items-start">
+        {/* Current Preview & Control Area (Mobile: Column, Desktop: Row) */}
+        <div className="flex flex-col sm:flex-row gap-3.5 items-center sm:items-start w-full">
           {/* Cover Preview */}
-          <div className="relative aspect-[2/3] w-24 sm:w-28 rounded-xl overflow-hidden border border-[#c3c7c7] bg-[#ffffff] shadow-xs flex-shrink-0 group">
-            {value ? (
+          <div className="relative aspect-[2/3] w-24 sm:w-28 rounded-xl overflow-hidden border border-[#c3c7c7] bg-[#ffffff] shadow-xs shrink-0 group">
+            {activeValue ? (
               <>
                 <img
-                  src={value}
+                  src={activeValue}
                   alt="도서 표지 미리보기"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
@@ -225,7 +236,7 @@ export const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
           {/* Tab Content Area */}
           <div className="flex-1 w-full min-w-0">
             {tab === 'upload' && (
-              <div className="space-y-2">
+              <div className="space-y-2 w-full">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -248,80 +259,80 @@ export const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1.5 ${
+                  className={`border-2 border-dashed rounded-xl p-3 sm:p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1 w-full box-border ${
                     isDragging
                       ? 'border-[#171e1e] bg-[#f0eee9]'
                       : 'border-[#c3c7c7] hover:border-[#737878] bg-white'
                   }`}
                 >
-                  <UploadCloud className="w-5 h-5 text-[#737878]" />
-                  <p className="text-xs font-semibold text-[#171e1e]">
-                    {isProcessing ? '이미지 처리 중...' : '이미지 파일을 여기에 끌어다 놓거나 클릭'}
+                  <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5 text-[#737878]" />
+                  <p className="text-[11px] sm:text-xs font-semibold text-[#171e1e]">
+                    {isProcessing ? '이미지 처리 중...' : '이미지 파일 업로드 (클릭/드래그)'}
                   </p>
-                  <p className="text-[11px] text-[#737878]">
+                  <p className="text-[10px] sm:text-[11px] text-[#737878]">
                     PNG, JPG, WEBP 지원 (자동 최적화)
                   </p>
                 </div>
 
                 {/* Direct Action Buttons */}
-                <div className="flex gap-2">
+                <div className="grid grid-cols-2 gap-2 w-full">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 py-1.5 px-3 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-xl text-xs font-semibold text-[#434848] flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-2 px-2 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-xl text-[11px] sm:text-xs font-semibold text-[#434848] flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer truncate"
                   >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>내 파일 선택</span>
+                    <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">내 파일 선택</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => cameraInputRef.current?.click()}
-                    className="flex-1 py-1.5 px-3 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-xl text-xs font-semibold text-[#434848] flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-2 px-2 bg-white border border-[#c3c7c7] hover:bg-[#f5f3ee] rounded-xl text-[11px] sm:text-xs font-semibold text-[#434848] flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer truncate"
                   >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>사진 직접 촬영</span>
+                    <Camera className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">직접 촬영</span>
                   </button>
                 </div>
               </div>
             )}
 
             {tab === 'url' && (
-              <div className="space-y-2">
-                <div className="flex gap-2">
+              <div className="space-y-2 w-full">
+                <div className="flex gap-1.5 w-full">
                   <input
                     type="url"
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
                     placeholder="https://example.com/cover.jpg"
-                    className="flex-1 px-3 py-2 bg-white border border-[#c3c7c7] rounded-xl text-xs focus:border-[#171e1e] outline-none"
+                    className="flex-1 min-w-0 px-2.5 py-1.5 sm:py-2 bg-white border border-[#c3c7c7] rounded-xl text-xs focus:border-[#171e1e] outline-none"
                   />
                   <button
                     type="button"
                     onClick={handleApplyUrl}
-                    className="px-3 py-2 bg-[#171e1e] text-white rounded-xl text-xs font-semibold hover:bg-[#2c3333] cursor-pointer"
+                    className="px-3 py-1.5 sm:py-2 bg-[#171e1e] text-white rounded-xl text-xs font-semibold hover:bg-[#2c3333] shrink-0 cursor-pointer"
                   >
                     적용
                   </button>
                 </div>
-                <p className="text-[11px] text-[#737878]">
+                <p className="text-[10px] sm:text-[11px] text-[#737878]">
                   외부 웹사이트나 출판사에서 제공하는 고화질 표지 URL을 입력하세요.
                 </p>
               </div>
             )}
 
             {tab === 'presets' && (
-              <div className="space-y-2">
-                <p className="text-[11px] text-[#737878]">
-                  마음에 드는 표지 템플릿을 선택해보세요:
+              <div className="space-y-2 w-full">
+                <p className="text-[10px] sm:text-[11px] text-[#737878]">
+                  추천 표지 템플릿 선택:
                 </p>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 w-full">
                   {PRESET_COVERS.map((preset) => (
                     <button
                       key={preset.name}
                       type="button"
-                      onClick={() => onChange(preset.url)}
-                      className={`p-1.5 rounded-lg border text-left flex items-center gap-1.5 text-[11px] transition-all cursor-pointer ${
-                        value === preset.url
+                      onClick={() => handleValueChange(preset.url)}
+                      className={`p-1 sm:p-1.5 rounded-lg border text-left flex items-center gap-1.5 text-[10px] sm:text-[11px] transition-all cursor-pointer min-w-0 ${
+                        activeValue === preset.url
                           ? 'border-[#171e1e] bg-white font-bold text-[#171e1e]'
                           : 'border-[#e4e2dd] bg-white/70 hover:bg-white text-[#434848]'
                       }`}
@@ -329,11 +340,11 @@ export const CoverImageUploader: React.FC<CoverImageUploaderProps> = ({
                       <img
                         src={preset.url}
                         alt={preset.name}
-                        className="w-5 h-7 object-cover rounded-xs flex-shrink-0"
+                        className="w-4 h-6 sm:w-5 sm:h-7 object-cover rounded-xs shrink-0"
                         referrerPolicy="no-referrer"
                       />
                       <span className="truncate flex-1">{preset.name}</span>
-                      {value === preset.url && <Check className="w-3 h-3 text-[#3c4c20]" />}
+                      {activeValue === preset.url && <Check className="w-3 h-3 text-[#3c4c20] shrink-0" />}
                     </button>
                   ))}
                 </div>

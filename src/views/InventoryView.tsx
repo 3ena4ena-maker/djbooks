@@ -136,9 +136,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     if (filter === 'out_of_stock') {
       return book.quantity <= 0;
     }
-    if (filter === 'low_stock') {
-      return book.quantity <= (settings.lowStockThreshold || 2);
-    }
     return true;
   });
 

@@ -97,6 +97,10 @@ export default function App() {
         return;
       }
       setCurrentView(view);
+      if (view === 'inventory') {
+        // Default to 'all' when navigating via hash unless specifically filtered
+        setInventoryFilter((prev) => (prev === 'out_of_stock' ? prev : 'all'));
+      }
       if (bookId) {
         setSelectedBookId(bookId);
       }
@@ -113,6 +117,11 @@ export default function App() {
     if (!isAdmin && (view === 'history' || view === 'settings')) {
       setToastMessage('관리자 모드 전용 메뉴입니다.');
       return;
+    }
+
+    if (view === 'inventory') {
+      setInventoryFilter('all');
+      setSearchQuery('');
     }
 
     setCurrentView(view);

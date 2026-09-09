@@ -234,13 +234,16 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                   <button
                     type="button"
                     onClick={async () => {
+                      const prevStatus = Boolean(book.isReaderPick);
                       const newStatus = await inventoryStore.toggleReaderPick(book.id);
                       feedback.playBeep('click');
-                      onShowToast(
-                        newStatus
-                          ? `'${book.title}'이(가) 독자픽으로 지정되었습니다.`
-                          : `'${book.title}'의 독자픽 지정이 해제되었습니다.`
-                      );
+                      if (newStatus === prevStatus) {
+                        onShowToast(`'${book.title}'의 독자픽 상태를 저장하지 못했습니다. 다시 시도해주세요.`);
+                      } else if (newStatus) {
+                        onShowToast(`'${book.title}'이(가) 독자픽으로 지정되었습니다.`);
+                      } else {
+                        onShowToast(`'${book.title}'의 독자픽 지정이 해제되었습니다.`);
+                      }
                     }}
                     className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs ${
                       book.isReaderPick

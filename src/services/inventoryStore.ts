@@ -270,6 +270,17 @@ class InventoryStore {
 
       if (txError) throw txError;
 
+      // 3-1. Fetch all active Reader Picks from inventory_transactions for multi-device sync
+      const { data: dbReaderPicks, error: rpError } = await supabase
+        .from('inventory_transactions')
+        .select('book_id')
+        .eq('transaction_type', 'READER_PICK');
+
+      if (rpError) {
+        console.warn('[InventoryStore] Reader picks fetch error:', rpError);
+      }
+      const readerPickSet = new Set<string>((dbReaderPicks || []).map((rp: any) => rp.book_id));
+
       // If database is completely empty on first connection, seed initial sample books with valid UUIDs
       if ((!dbBooks || dbBooks.length === 0) && (!dbInventory || dbInventory.length === 0)) {
         await this.seedInitialBooksToSupabase();
@@ -279,6 +290,7 @@ class InventoryStore {
       // Map Supabase books to Frontend model - directly use Supabase UUID (b.id)
       const mappedBooks: Book[] = (dbBooks || []).map((b: DbBook) => {
         const parsedCat = parseCategoryHierarchy(b.category);
+        const isPickFromDb = b.is_reader_pick === true || readerPickSet.has(b.id);
         return {
           id: b.id,
           isbn: b.isbn || '',
@@ -294,7 +306,7 @@ class InventoryStore {
           coverImage:
             b.cover_image_url ||
             'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
-          isReaderPick: Boolean(b.is_reader_pick ?? (b as any).isReaderPick ?? false),
+          isReaderPick: Boolean(isPickFromDb),
           createdAt: b.created_at || new Date().toISOString(),
           updatedAt: b.updated_at || new Date().toISOString(),
         };
@@ -972,6 +984,17 @@ class InventoryStore {
             created_at: now,
           });
         }
+
+        // Record reader pick in inventory_transactions for multi-device sync
+        if (isReaderPick) {
+          await supabase.from('inventory_transactions').insert({
+            book_id: finalBookId,
+            change_quantity: 0,
+            transaction_type: 'READER_PICK',
+            note: '신규 도서 등록 시 독자픽 지정',
+            created_at: now,
+          });
+        }
       } catch (e) {
         console.error('Error inserting new book to Supabase:', e);
       }
@@ -1075,30 +1098,93 @@ class InventoryStore {
     const book = this.books.find((b) => b.id === bookId);
     if (!book) return false;
 
-    const newPickStatus = !book.isReaderPick;
-    // 중요한 요구사항: 독자픽 변경 시 최근 수정일(updatedAt)은 변경하지 않는다!
-    book.isReaderPick = newPickStatus;
-
-    this.saveToStorage();
-    this.notify();
+    const prevStatus = Boolean(book.isReaderPick);
+    const newPickStatus = !prevStatus;
+    const prevUpdatedAt = book.updatedAt;
 
     if (isSupabaseConfigured) {
+      let syncSucceeded = false;
+      let syncError: any = null;
+
+      // 1. Supabase books 테이블의 is_reader_pick 컬럼 업데이트 시도 (컬럼이 이미 존재하는 경우)
       try {
-        const { error } = await supabase
+        const { error: bErr } = await supabase
           .from('books')
           .update({
             is_reader_pick: newPickStatus,
-            updated_at: book.updatedAt, // 기존 수정일 유지
+            updated_at: prevUpdatedAt, // 기존 수정일 유지
           })
           .eq('id', bookId);
 
-        if (error) {
-          console.warn('[InventoryStore] Supabase is_reader_pick update error (column might not exist yet):', error.message);
+        if (!bErr) {
+          syncSucceeded = true;
+        } else {
+          syncError = bErr;
+          console.warn('[InventoryStore] books 테이블 is_reader_pick 업데이트 확인/폴백 준비:', bErr.message);
         }
-      } catch (e) {
-        console.warn('[InventoryStore] Error updating reader pick in Supabase:', e);
+      } catch (err) {
+        syncError = err;
+      }
+
+      // 2. 기기 간 완벽 동기화를 위해 inventory_transactions 테이블에도 독자픽 상태 영구 기록
+      try {
+        if (newPickStatus) {
+          // 중복 방지: 기존 레코드 정리 후 INSERT
+          await supabase
+            .from('inventory_transactions')
+            .delete()
+            .eq('book_id', bookId)
+            .eq('transaction_type', 'READER_PICK');
+
+          const { error: insErr } = await supabase
+            .from('inventory_transactions')
+            .insert({
+              book_id: bookId,
+              change_quantity: 0,
+              transaction_type: 'READER_PICK',
+              note: '독자픽 지정',
+            });
+
+          if (!insErr) {
+            syncSucceeded = true;
+          } else {
+            console.error('[InventoryStore] 독자픽 트랜잭션 insert 에러:', insErr);
+            if (!syncSucceeded) syncError = insErr;
+          }
+        } else {
+          // 해제 시: READER_PICK 트랜잭션 삭제
+          const { error: delErr } = await supabase
+            .from('inventory_transactions')
+            .delete()
+            .eq('book_id', bookId)
+            .eq('transaction_type', 'READER_PICK');
+
+          if (!delErr) {
+            syncSucceeded = true;
+          } else {
+            console.error('[InventoryStore] 독자픽 트랜잭션 delete 에러:', delErr);
+            if (!syncSucceeded) syncError = delErr;
+          }
+        }
+      } catch (txErr) {
+        console.error('[InventoryStore] 독자픽 트랜잭션 처리 중 예외:', txErr);
+        if (!syncSucceeded) syncError = txErr;
+      }
+
+      // Supabase UPDATE가 실패한 경우 로컬 상태를 변경하지 않고 기존 상태 유지
+      if (!syncSucceeded) {
+        console.error('[InventoryStore] Supabase 독자픽 동기화 실패:', syncError);
+        return prevStatus;
       }
     }
+
+    // UPDATE 성공이 확인된 경우에만 로컬 상태 변경
+    book.isReaderPick = newPickStatus;
+    // 중요한 요구사항: 독자픽 변경 시에는 독자픽 관련 값만 UPDATE하고 기존 updatedAt 값은 그대로 유지할 것!
+    book.updatedAt = prevUpdatedAt;
+
+    this.saveToStorage();
+    this.notify();
 
     return newPickStatus;
   }
@@ -1126,7 +1212,8 @@ class InventoryStore {
       const book = this.books.find((b) => b.id === id);
       if (book) {
         book.location = newLocation;
-        // 서가 위치 변경은 재고 보관 위치 변경이므로 정렬 순서 보존을 위해 도서 updatedAt은 유지
+        // 서가 위치 변경 시 도서 updatedAt 갱신
+        book.updatedAt = now;
         this.locations[id] = newLocation;
         validBookIds.push(id);
       }
@@ -1139,6 +1226,12 @@ class InventoryStore {
     let failCount = 0;
     if (isSupabaseConfigured && validBookIds.length > 0) {
       try {
+        // books 테이블의 updated_at 갱신
+        await supabase
+          .from('books')
+          .update({ updated_at: now })
+          .in('id', validBookIds);
+
         // inventory 테이블의 서가 위치 일괄 갱신
         const { error: invErr } = await supabase
           .from('inventory')
@@ -1195,6 +1288,21 @@ class InventoryStore {
 
       if (error) {
         console.error('Error updating book in Supabase:', error);
+      }
+
+      // Sync reader pick with inventory_transactions for cross-device persistence
+      if (updates.isReaderPick !== undefined) {
+        if (updates.isReaderPick) {
+          await supabase.from('inventory_transactions').delete().eq('book_id', bookId).eq('transaction_type', 'READER_PICK');
+          await supabase.from('inventory_transactions').insert({
+            book_id: bookId,
+            change_quantity: 0,
+            transaction_type: 'READER_PICK',
+            note: '도서 정보 수정 시 독자픽 지정',
+          });
+        } else {
+          await supabase.from('inventory_transactions').delete().eq('book_id', bookId).eq('transaction_type', 'READER_PICK');
+        }
       }
 
       if (updates.location) {

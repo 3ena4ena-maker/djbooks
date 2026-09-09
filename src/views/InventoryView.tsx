@@ -108,7 +108,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       setTick((t) => t + 1);
     });
     const unsubAuth = authStore.subscribe(() => {
-      setIsAdmin(authStore.isAdmin);
+      const nextIsAdmin = authStore.isAdmin;
+      setIsAdmin(nextIsAdmin);
+      if (!nextIsAdmin) {
+        setSelectedBookIds([]);
+      }
     });
     return () => {
       unsubStore();
@@ -284,9 +288,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const handleToggleReaderPick = async (e: React.MouseEvent, book: BookWithStock) => {
     e.stopPropagation();
     e.preventDefault();
+    const prevStatus = Boolean(book.isReaderPick);
     const newStatus = await inventoryStore.toggleReaderPick(book.id);
     feedback.playBeep('click');
-    if (newStatus) {
+    if (newStatus === prevStatus) {
+      onShowToast(`'${book.title}'의 독자픽 상태를 저장하지 못했습니다. 다시 시도해주세요.`);
+    } else if (newStatus) {
       onShowToast(`'${book.title}'이(가) 독자픽으로 지정되었습니다.`);
     } else {
       onShowToast(`'${book.title}'의 독자픽 지정이 해제되었습니다.`);
@@ -671,73 +678,72 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               </div>
             </div>
 
-            {/* 2. 도서 다중 선택 및 서가 위치 일괄 변경 툴바 */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#f5f3ee] p-2.5 sm:p-3 rounded-2xl border border-[#e9e2d1]">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <label className="flex items-center gap-2 text-xs font-bold text-[#171e1e] cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    title="현재 목록 전체 선택 / 해제"
-                    checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
-                    ref={(el) => {
-                      if (el) {
-                        el.indeterminate =
-                          selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
-                      }
-                    }}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        handleSelectAll();
-                      } else {
-                        handleClearSelection();
-                      }
-                    }}
-                    className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
-                  />
-                  <span>전체 선택</span>
-                </label>
+            {/* 2. 도서 다중 선택 및 서가 위치 일괄 변경 툴바 (관리자 모드 전용) */}
+            {isAdmin && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#f5f3ee] p-2.5 sm:p-3 rounded-2xl border border-[#e9e2d1]">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#171e1e] cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      title="현재 목록 전체 선택 / 해제"
+                      checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate =
+                            selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
+                        }
+                      }}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          handleSelectAll();
+                        } else {
+                          handleClearSelection();
+                        }
+                      }}
+                      className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                    />
+                    <span>전체 선택</span>
+                  </label>
 
-                {selectedBookIds.length > 0 ? (
-                  <span className="text-xs font-bold bg-[#171e1e] text-white px-2.5 py-0.5 rounded-full">
-                    {selectedBookIds.length}권 선택됨
-                  </span>
-                ) : (
-                  <span className="text-xs text-[#737878]">
-                    (총 {sortedBooks.length}권 중)
-                  </span>
-                )}
+                  {selectedBookIds.length > 0 ? (
+                    <span className="text-xs font-bold bg-[#171e1e] text-white px-2.5 py-0.5 rounded-full">
+                      {selectedBookIds.length}권 선택됨
+                    </span>
+                  ) : (
+                    <span className="text-xs text-[#737878]">
+                      (총 {sortedBooks.length}권 중)
+                    </span>
+                  )}
 
-                {selectedBookIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearSelection}
-                    className="text-xs text-[#737878] hover:text-[#171e1e] underline cursor-pointer"
+                  {selectedBookIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearSelection}
+                      className="text-xs text-[#737878] hover:text-[#171e1e] underline cursor-pointer"
+                    >
+                      선택 해제
+                    </button>
+                  )}
+                </div>
+
+                {/* 일괄 서가 위치 변경 컨트롤 */}
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <span className="text-xs font-bold text-[#434848] whitespace-nowrap">
+                    서가 위치 변경:
+                  </span>
+                  <select
+                    value={batchLocation}
+                    onChange={(e) => setBatchLocation(e.target.value as ShelfLocation)}
+                    disabled={selectedBookIds.length === 0}
+                    className="bg-white border border-[#c3c7c7] rounded-xl px-2.5 py-1.5 text-xs font-semibold text-[#171e1e] outline-none disabled:bg-[#eae8e3] disabled:text-[#a0a5a5] cursor-pointer disabled:cursor-not-allowed"
                   >
-                    선택 해제
-                  </button>
-                )}
-              </div>
+                    {SHELF_LOCATIONS.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
 
-              {/* 일괄 서가 위치 변경 컨트롤 (관리자 모드 전용) */}
-              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                <span className="text-xs font-bold text-[#434848] whitespace-nowrap">
-                  서가 위치 변경:
-                </span>
-                <select
-                  value={batchLocation}
-                  onChange={(e) => setBatchLocation(e.target.value as ShelfLocation)}
-                  disabled={!isAdmin || selectedBookIds.length === 0}
-                  className="bg-white border border-[#c3c7c7] rounded-xl px-2.5 py-1.5 text-xs font-semibold text-[#171e1e] outline-none disabled:bg-[#eae8e3] disabled:text-[#a0a5a5] cursor-pointer disabled:cursor-not-allowed"
-                  title={!isAdmin ? '서가 위치 변경은 관리자 모드에서만 가능합니다' : undefined}
-                >
-                  {SHELF_LOCATIONS.map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-                </select>
-
-                {isAdmin ? (
                   <button
                     type="button"
                     disabled={selectedBookIds.length === 0 || isBatchUpdating}
@@ -750,18 +756,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   >
                     {isBatchUpdating ? '변경 중...' : '서가 위치 변경'}
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#eae8e3] text-[#737878] border border-[#c3c7c7] cursor-not-allowed whitespace-nowrap flex items-center gap-1"
-                    title="관리자 모드(상단 '독립서점' 3회 연속 터치)에서만 위치를 변경할 수 있습니다"
-                  >
-                    <span>🔒 관리자 전용</span>
-                  </button>
-                )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 홈 대시보드 재고부족 연동 필터 활성화 시 안내 배너 */}
@@ -785,27 +782,29 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             <table className="w-full text-left border-collapse font-['Public_Sans','Noto_Sans_KR',sans-serif]">
               <thead>
                 <tr className="bg-[#f5f3ee] border-b border-[#c3c7c7] text-xs font-bold uppercase tracking-wider text-[#434848]">
-                  <th className="py-3.5 px-3 w-10 text-center">
-                    <input
-                      type="checkbox"
-                      title="전체 선택 / 해제"
-                      checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
-                      ref={(el) => {
-                        if (el) {
-                          el.indeterminate =
-                            selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
-                        }
-                      }}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          handleSelectAll();
-                        } else {
-                          handleClearSelection();
-                        }
-                      }}
-                      className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
-                    />
-                  </th>
+                  {isAdmin && (
+                    <th className="py-3.5 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        title="전체 선택 / 해제"
+                        checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
+                        ref={(el) => {
+                          if (el) {
+                            el.indeterminate =
+                              selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
+                          }
+                        }}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            handleSelectAll();
+                          } else {
+                            handleClearSelection();
+                          }
+                        }}
+                        className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                      />
+                    </th>
+                  )}
                   <th className="py-3.5 px-4 w-16">표지</th>
                   <th className="py-3.5 px-5">도서명 및 저자</th>
                   <th className="py-3.5 px-5">ISBN / 출판사 / 위치</th>
@@ -818,7 +817,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               <tbody className="divide-y divide-[#e4e2dd] text-sm">
                 {sortedBooks.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-[#737878]">
+                    <td colSpan={isAdmin ? 8 : 6} className="py-12 text-center text-[#737878]">
                       일치하는 도서가 없습니다.
                     </td>
                   </tr>
@@ -829,20 +828,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       data-book-id={book.id}
                       onClick={() => onSelectBook(book.id)}
                       className={`transition-colors cursor-pointer group ${
-                        selectedBookIds.includes(book.id)
+                        isAdmin && selectedBookIds.includes(book.id)
                           ? 'bg-[#f4f2ec] hover:bg-[#eae8e1]'
                           : 'hover:bg-[#f5f3ee]'
                       }`}
                     >
-                      {/* Checkbox */}
-                      <td className="py-3.5 px-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedBookIds.includes(book.id)}
-                          onChange={() => handleToggleSelect(book.id)}
-                          className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
-                        />
-                      </td>
+                      {/* Checkbox (관리자 전용) */}
+                      {isAdmin && (
+                        <td className="py-3.5 px-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedBookIds.includes(book.id)}
+                            onChange={() => handleToggleSelect(book.id)}
+                            className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                          />
+                        </td>
+                      )}
 
                       {/* Cover */}
                       <td className="py-3.5 px-4 align-middle">
@@ -974,21 +975,23 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   data-book-id={book.id}
                   onClick={() => onSelectBook(book.id)}
                   className={`rounded-2xl p-4 border transition-all shadow-xs flex flex-col gap-3 cursor-pointer ${
-                    selectedBookIds.includes(book.id)
+                    isAdmin && selectedBookIds.includes(book.id)
                       ? 'bg-[#f4f2ec] border-[#171e1e] ring-1 ring-[#171e1e]'
                       : 'bg-white border-[#e9e2d1] hover:border-[#171e1e]'
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    {/* Mobile Checkbox */}
-                    <div className="pt-1" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedBookIds.includes(book.id)}
-                        onChange={() => handleToggleSelect(book.id)}
-                        className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
-                      />
-                    </div>
+                    {/* Mobile Checkbox (관리자 모드 전용) */}
+                    {isAdmin && (
+                      <div className="pt-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedBookIds.includes(book.id)}
+                          onChange={() => handleToggleSelect(book.id)}
+                          className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                        />
+                      </div>
+                    )}
                     <BookCover src={book.coverImage} alt={book.title} size="md" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">

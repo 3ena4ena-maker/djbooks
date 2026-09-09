@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { authStore } from '../services/authStore';
+import { getDisplayCategory } from '../utils/category';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
 import { EditBookModal } from '../components/modals/EditBookModal';
@@ -141,7 +142,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       const matchAuthor = book.author.toLowerCase().includes(q);
       const matchIsbn = book.isbn.toLowerCase().includes(q);
       const matchPublisher = book.publisher.toLowerCase().includes(q);
-      if (!matchTitle && !matchAuthor && !matchIsbn && !matchPublisher) {
+      const matchCategory =
+        (book.category && book.category.toLowerCase().includes(q)) ||
+        (book.categorySub && book.categorySub.toLowerCase().includes(q)) ||
+        (book.categoryMiddle && book.categoryMiddle.toLowerCase().includes(q)) ||
+        (book.categoryMain && book.categoryMain.toLowerCase().includes(q));
+      if (!matchTitle && !matchAuthor && !matchIsbn && !matchPublisher && !matchCategory) {
         return false;
       }
     }
@@ -787,6 +793,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                         <div className="font-mono text-xs text-[#171e1e]">{book.isbn}</div>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           <span className="text-xs text-[#737878]">{book.publisher}</span>
+                          <span className="inline-flex items-center text-[10px] font-semibold text-[#434848] bg-[#f0eee9] px-1.5 py-0.5 rounded border border-[#e4e2dd] whitespace-nowrap">
+                            {getDisplayCategory(book)}
+                          </span>
                           {book.location && (
                             <span className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-[#e9e2d1] text-[#434848] px-1.5 py-0.5 rounded-md">
                               📍 {book.location}
@@ -918,6 +927,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <p className="text-xs text-[#737878]">{book.author} · {book.publisher}</p>
+                        <span className="inline-flex items-center text-[9px] font-semibold text-[#434848] bg-[#f0eee9] px-1.5 py-0.5 rounded border border-[#e4e2dd] whitespace-nowrap">
+                          {getDisplayCategory(book)}
+                        </span>
                         {book.location && (
                           <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-[#e9e2d1] text-[#434848] px-1.5 py-0.2 rounded">
                             📍 {book.location}

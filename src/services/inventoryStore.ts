@@ -11,6 +11,7 @@ import {
   CustomerOrderStatus,
   DbCustomerOrder,
 } from '../types';
+import { parseCategoryHierarchy } from '../utils/category';
 import { INITIAL_BOOKS, INITIAL_INVENTORY, INITIAL_LOGS } from '../data/mockData';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { authStore } from './authStore';
@@ -276,22 +277,28 @@ class InventoryStore {
       }
 
       // Map Supabase books to Frontend model - directly use Supabase UUID (b.id)
-      const mappedBooks: Book[] = (dbBooks || []).map((b: DbBook) => ({
-        id: b.id,
-        isbn: b.isbn || '',
-        title: b.title || '제목 없음',
-        author: b.author || '저자 미상',
-        publisher: b.publisher || '출판사 미상',
-        price: Number(b.price) || 0,
-        category: b.category || '소설',
-        description: b.description || '',
-        coverImage:
-          b.cover_image_url ||
-          'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
-        isReaderPick: Boolean(b.is_reader_pick ?? (b as any).isReaderPick ?? false),
-        createdAt: b.created_at || new Date().toISOString(),
-        updatedAt: b.updated_at || new Date().toISOString(),
-      }));
+      const mappedBooks: Book[] = (dbBooks || []).map((b: DbBook) => {
+        const parsedCat = parseCategoryHierarchy(b.category);
+        return {
+          id: b.id,
+          isbn: b.isbn || '',
+          title: b.title || '제목 없음',
+          author: b.author || '저자 미상',
+          publisher: b.publisher || '출판사 미상',
+          price: Number(b.price) || 0,
+          category: b.category || parsedCat.full || '소설',
+          categoryMain: b.category_main || parsedCat.main,
+          categoryMiddle: b.category_middle || parsedCat.middle,
+          categorySub: b.category_sub || parsedCat.sub,
+          description: b.description || '',
+          coverImage:
+            b.cover_image_url ||
+            'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+          isReaderPick: Boolean(b.is_reader_pick ?? (b as any).isReaderPick ?? false),
+          createdAt: b.created_at || new Date().toISOString(),
+          updatedAt: b.updated_at || new Date().toISOString(),
+        };
+      });
 
       // Map Inventory
       const invMap: Record<string, number> = {};
@@ -566,6 +573,7 @@ class InventoryStore {
         .eq('book_id', bookData.id)
         .maybeSingle();
 
+      const parsedCat = parseCategoryHierarchy(bookData.category);
       const result: BookWithStock = {
         id: bookData.id,
         isbn: bookData.isbn,
@@ -573,7 +581,10 @@ class InventoryStore {
         author: bookData.author,
         publisher: bookData.publisher,
         price: Number(bookData.price) || 0,
-        category: bookData.category || '소설',
+        category: bookData.category || parsedCat.full || '소설',
+        categoryMain: bookData.category_main || parsedCat.main,
+        categoryMiddle: bookData.category_middle || parsedCat.middle,
+        categorySub: bookData.category_sub || parsedCat.sub,
         description: bookData.description || '',
         coverImage:
           bookData.cover_image_url ||
@@ -884,6 +895,12 @@ class InventoryStore {
     const now = new Date().toISOString();
     const isReaderPick = Boolean(bookData.isReaderPick ?? false);
 
+    const parsedCat = parseCategoryHierarchy(bookData.category);
+    const categoryMain = bookData.categoryMain || parsedCat.main;
+    const categoryMiddle = bookData.categoryMiddle || parsedCat.middle;
+    const categorySub = bookData.categorySub || parsedCat.sub;
+    const finalCategory = bookData.category || parsedCat.full || '소설';
+
     let finalBookId = generatedBookId;
 
     if (isSupabaseConfigured) {
@@ -895,7 +912,10 @@ class InventoryStore {
           author: bookData.author,
           publisher: bookData.publisher,
           price: bookData.price,
-          category: bookData.category || '소설',
+          category: finalCategory,
+          category_main: categoryMain || null,
+          category_middle: categoryMiddle || null,
+          category_sub: categorySub || null,
           description: bookData.description || null,
           cover_image_url: bookData.coverImage,
           is_reader_pick: isReaderPick,
@@ -910,9 +930,14 @@ class InventoryStore {
           .select('id, created_at, updated_at')
           .single();
 
-        // If is_reader_pick column does not exist yet in db, retry without it
-        if (bErr && (bErr.message?.includes('is_reader_pick') || (bErr as any).code === '42703')) {
-          delete bookPayload.is_reader_pick;
+        // If category hierarchy or is_reader_pick column does not exist yet in db, retry without them
+        if (bErr && ((bErr as any).code === '42703' || bErr.message?.includes('column') || bErr.message?.includes('category_'))) {
+          delete bookPayload.category_main;
+          delete bookPayload.category_middle;
+          delete bookPayload.category_sub;
+          if (bErr.message?.includes('is_reader_pick')) {
+            delete bookPayload.is_reader_pick;
+          }
           const retryRes = await supabase
             .from('books')
             .insert(bookPayload)
@@ -954,6 +979,10 @@ class InventoryStore {
 
     const newBook: Book = {
       ...bookData,
+      category: finalCategory,
+      categoryMain,
+      categoryMiddle,
+      categorySub,
       isReaderPick,
       id: finalBookId,
       createdAt: now,
@@ -1010,6 +1039,16 @@ class InventoryStore {
   public async updateBook(bookId: string, updates: Partial<Book>): Promise<boolean> {
     const index = this.books.findIndex((b) => b.id === bookId);
     if (index === -1) return false;
+
+    // 카테고리가 업데이트된 경우 계층 구조 파싱 및 보존
+    if (updates.category !== undefined || updates.categorySub !== undefined) {
+      const targetCat = updates.category || updates.categorySub || '';
+      const parsedCat = parseCategoryHierarchy(targetCat);
+      if (!updates.category) updates.category = targetCat || parsedCat.full;
+      if (!updates.categoryMain && parsedCat.main) updates.categoryMain = parsedCat.main;
+      if (!updates.categoryMiddle && parsedCat.middle) updates.categoryMiddle = parsedCat.middle;
+      if (!updates.categorySub && parsedCat.sub) updates.categorySub = parsedCat.sub;
+    }
 
     const now = new Date().toISOString();
     this.books[index] = {
@@ -1146,15 +1185,23 @@ class InventoryStore {
       if (updates.publisher !== undefined) payload.publisher = updates.publisher;
       if (updates.price !== undefined) payload.price = updates.price;
       if (updates.category !== undefined) payload.category = updates.category;
+      if (updates.categoryMain !== undefined) payload.category_main = updates.categoryMain;
+      if (updates.categoryMiddle !== undefined) payload.category_middle = updates.categoryMiddle;
+      if (updates.categorySub !== undefined) payload.category_sub = updates.categorySub;
       if (updates.description !== undefined) payload.description = updates.description;
       if (updates.coverImage !== undefined) payload.cover_image_url = updates.coverImage;
       if (updates.isReaderPick !== undefined) payload.is_reader_pick = updates.isReaderPick;
 
       let { error } = await supabase.from('books').update(payload).eq('id', bookId);
 
-      // If is_reader_pick column does not exist yet in db, retry without it
-      if (error && (error.message?.includes('is_reader_pick') || (error as any).code === '42703')) {
-        delete payload.is_reader_pick;
+      // If category hierarchy or is_reader_pick column does not exist yet in db, retry without them
+      if (error && ((error as any).code === '42703' || error.message?.includes('column') || error.message?.includes('category_'))) {
+        delete payload.category_main;
+        delete payload.category_middle;
+        delete payload.category_sub;
+        if (error.message?.includes('is_reader_pick')) {
+          delete payload.is_reader_pick;
+        }
         const retry = await supabase.from('books').update(payload).eq('id', bookId);
         error = retry.error;
       }
@@ -1811,13 +1858,19 @@ class InventoryStore {
       const data = await res.json();
       if (data?.success && data?.book) {
         console.log(`[Aladin Proxy] Result: found | Title: ${data.book.title}`);
+        const rawCat = data.book.category || '';
+        const parsedCat = parseCategoryHierarchy(rawCat);
+
         return {
           isbn: data.book.isbn || isbn13,
           title: data.book.title || '',
           author: data.book.author || '저자 미상',
           publisher: data.book.publisher || '출판사 미상',
           price: typeof data.book.price === 'number' ? data.book.price : 15000,
-          category: data.book.category || '소설/일반',
+          category: rawCat || parsedCat.full || '소설',
+          categoryMain: data.book.categoryMain || parsedCat.main,
+          categoryMiddle: data.book.categoryMiddle || parsedCat.middle,
+          categorySub: data.book.categorySub || parsedCat.sub,
           publishedDate: data.book.publishedDate || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
           bindingType: '무선제본',
           location: '신간 매대',
@@ -1905,10 +1958,11 @@ class InventoryStore {
             'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600';
         }
 
-        const category =
+        const rawCategory =
           Array.isArray(volumeInfo.categories) && volumeInfo.categories.length > 0
             ? volumeInfo.categories[0]
             : '일반도서';
+        const parsedCat = parseCategoryHierarchy(rawCategory);
 
         const publishedDate = volumeInfo.publishedDate
           ? volumeInfo.publishedDate.replace(/-/g, '.')
@@ -1923,7 +1977,10 @@ class InventoryStore {
           author: authors,
           publisher,
           price: 15000,
-          category,
+          category: rawCategory,
+          categoryMain: parsedCat.main,
+          categoryMiddle: parsedCat.middle,
+          categorySub: parsedCat.sub,
           publishedDate,
           bindingType: '무선제본',
           location: '신간 매대',

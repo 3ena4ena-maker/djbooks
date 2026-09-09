@@ -57,10 +57,16 @@ export const onRequestGet = async (context: { request: Request; env: AladinEnv }
                 if (coverImg.startsWith('http://')) {
                   coverImg = coverImg.replace('http://', 'https://');
                 }
-                const rawCategory = item.categoryName || '';
-                const category = rawCategory.includes('>')
-                  ? rawCategory.split('>')[1] || rawCategory
-                  : rawCategory || '소설/일반';
+                const rawCategory = (item.categoryName || '').trim();
+                const segments = rawCategory.includes('>')
+                  ? rawCategory.split('>').map((s: string) => s.trim()).filter(Boolean)
+                  : (rawCategory ? [rawCategory] : []);
+                const categoryMain = segments[0] || '';
+                const categoryMiddle = segments.length >= 2 ? segments[1] : '';
+                const categorySub =
+                  segments.length >= 3
+                    ? segments[segments.length - 1]
+                    : segments[1] || segments[0] || '';
 
                 return {
                   isbn: item.isbn13 || item.isbn || '',
@@ -68,7 +74,10 @@ export const onRequestGet = async (context: { request: Request; env: AladinEnv }
                   author: item.author || '저자 미상',
                   publisher: item.publisher || '출판사 미상',
                   price: Number(item.priceStandard) || Number(item.priceSales) || 15000,
-                  category,
+                  category: rawCategory || '소설',
+                  categoryMain,
+                  categoryMiddle,
+                  categorySub,
                   coverImage: coverImg,
                   publishedDate: item.pubDate ? item.pubDate.replace(/-/g, '.') : '',
                   description: item.description || '',
@@ -236,10 +245,16 @@ export const onRequestGet = async (context: { request: Request; env: AladinEnv }
         coverImg = coverImg.replace('http://', 'https://');
       }
 
-      const rawCategory = item.categoryName || '';
-      const category = rawCategory.includes('>')
-        ? rawCategory.split('>')[1] || rawCategory
-        : rawCategory || '소설/일반';
+      const rawCategory = (item.categoryName || '').trim();
+      const segments = rawCategory.includes('>')
+        ? rawCategory.split('>').map((s: string) => s.trim()).filter(Boolean)
+        : (rawCategory ? [rawCategory] : []);
+      const categoryMain = segments[0] || '';
+      const categoryMiddle = segments.length >= 2 ? segments[1] : '';
+      const categorySub =
+        segments.length >= 3
+          ? segments[segments.length - 1]
+          : segments[1] || segments[0] || '';
 
       const pubDate = item.pubDate
         ? item.pubDate.replace(/-/g, '.')
@@ -259,7 +274,10 @@ export const onRequestGet = async (context: { request: Request; env: AladinEnv }
             publisher,
             publishedDate: pubDate,
             price,
-            category,
+            category: rawCategory || '소설',
+            categoryMain,
+            categoryMiddle,
+            categorySub,
             coverImage: coverImg,
             description: item.description || '',
           },

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BookWithStock, ViewType } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { authStore } from '../services/authStore';
+import { getDisplayCategory } from '../utils/category';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
 import { StockAdjustModal } from '../components/modals/StockAdjustModal';
@@ -118,7 +119,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             <span>재고 목록으로 돌아가기</span>
           </button>
           <span className="text-[#c3c7c7]">/</span>
-          <span className="text-[#171e1e] font-semibold">{book.category || '소설'}</span>
+          <span className="text-[#171e1e] font-semibold">{getDisplayCategory(book)}</span>
         </div>
 
         {isAdmin && (
@@ -252,7 +253,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                     <span>{book.isReaderPick ? '독자픽 도서' : '독자픽 지정'}</span>
                   </button>
                   <span className="text-xs text-[#737878] bg-[#f0eee9] px-2 py-0.5 rounded-md font-medium">
-                    {book.category || '소설'}
+                    {getDisplayCategory(book)}
                   </span>
                 </div>
                 <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl sm:text-4xl md:text-5xl font-bold text-[#171e1e] mb-2 tracking-tight break-words">
@@ -329,10 +330,10 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[#c3c7c7] border-t border-[#c3c7c7]">
                 <div className="p-4 flex flex-col gap-1">
                   <span className="text-xs font-bold text-[#737878] uppercase tracking-wider">
-                    형태
+                    분류 (소분류)
                   </span>
                   <span className="text-sm font-semibold text-[#171e1e]">
-                    {book.bindingType || '양장본'}
+                    {getDisplayCategory(book)}
                   </span>
                 </div>
                 <div className="p-4 flex flex-col gap-1">

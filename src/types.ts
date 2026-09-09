@@ -10,6 +10,9 @@ export interface DbBook {
   publisher: string;
   price: number;
   category?: string | null;
+  category_main?: string | null;
+  category_middle?: string | null;
+  category_sub?: string | null;
   description?: string | null;
   cover_image_url?: string | null;
   is_reader_pick?: boolean | null;
@@ -60,6 +63,9 @@ export interface Book {
   price: number;
   coverImage: string;
   category?: string;
+  categoryMain?: string; // 대분류 (예: '국내도서')
+  categoryMiddle?: string; // 중분류 (예: '소설')
+  categorySub?: string; // 소분류 (예: '한국소설', '추리/미스터리')
   publishedDate?: string;
   bindingType?: string; // e.g., '양장본', '무선제본'
   location?: string; // e.g., 'A4 선반, 소설 구역'

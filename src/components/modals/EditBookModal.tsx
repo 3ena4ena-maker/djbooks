@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BookWithStock, SHELF_LOCATIONS } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
+import { getDisplayCategory } from '../../utils/category';
 import { CoverImageUploader } from '../common/CoverImageUploader';
 import { feedback } from '../../utils/feedback';
 import { X, Check, Edit, Sparkles, BookOpen, Bookmark } from 'lucide-react';
@@ -20,7 +21,7 @@ export const EditBookModal: React.FC<EditBookModalProps> = ({
   const [author, setAuthor] = useState(book.author || '');
   const [publisher, setPublisher] = useState(book.publisher || '');
   const [price, setPrice] = useState<number | ''>(book.price !== undefined ? book.price : '');
-  const [category, setCategory] = useState(book.category || '소설');
+  const [category, setCategory] = useState(book.categorySub || getDisplayCategory(book) || '소설');
   const [bindingType, setBindingType] = useState(book.bindingType || '양장본');
   const [location, setLocation] = useState(book.location || 'A1 선반');
   const [publishedDate, setPublishedDate] = useState(

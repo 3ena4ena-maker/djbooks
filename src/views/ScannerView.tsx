@@ -462,6 +462,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           coverImage:
             newBookCandidate.coverImage ||
             'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+          isReaderPick: false,
           publishedDate:
             newBookCandidate.publishedDate ||
             new Date().toISOString().split('T')[0].replace(/-/g, '.'),

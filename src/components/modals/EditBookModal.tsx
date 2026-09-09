@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { BookWithStock } from '../../types';
+import { BookWithStock, SHELF_LOCATIONS } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
 import { CoverImageUploader } from '../common/CoverImageUploader';
 import { feedback } from '../../utils/feedback';
-import { X, Check, Edit, Sparkles, BookOpen } from 'lucide-react';
+import { X, Check, Edit, Sparkles, BookOpen, Bookmark } from 'lucide-react';
 
 interface EditBookModalProps {
   book: BookWithStock;
@@ -31,6 +31,7 @@ export const EditBookModal: React.FC<EditBookModalProps> = ({
     book.coverImage ||
       'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600'
   );
+  const [isReaderPick, setIsReaderPick] = useState(book.isReaderPick || false);
   const [description, setDescription] = useState(book.description || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -53,6 +54,7 @@ export const EditBookModal: React.FC<EditBookModalProps> = ({
         publishedDate,
         isbn: isbn.trim(),
         coverImage,
+        isReaderPick,
         description: description.trim(),
       };
 
@@ -214,13 +216,21 @@ export const EditBookModal: React.FC<EditBookModalProps> = ({
               <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1">
                 서가 위치
               </label>
-              <input
-                type="text"
+              <select
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="예: A4 선반"
                 className="w-full px-3 py-2 bg-white border border-[#c3c7c7] rounded-xl focus:border-[#171e1e] outline-none text-xs"
-              />
+              >
+                {/* 기존 데이터에 9개 목록 외의 서가 위치가 설정되어 있던 경우 보존 */}
+                {location && !SHELF_LOCATIONS.includes(location as any) && (
+                  <option value={location}>{location} (기존 위치)</option>
+                )}
+                {SHELF_LOCATIONS.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -250,6 +260,39 @@ export const EditBookModal: React.FC<EditBookModalProps> = ({
                 className="w-full px-3 py-2 bg-white border border-[#c3c7c7] rounded-xl focus:border-[#171e1e] outline-none text-xs"
               />
             </div>
+          </div>
+
+          {/* 독자픽 여부 설정 */}
+          <div
+            onClick={() => setIsReaderPick(!isReaderPick)}
+            className={`flex items-center justify-between p-3.5 rounded-xl border transition-all cursor-pointer ${
+              isReaderPick
+                ? 'bg-[#fff8e1] border-[#ffe082]'
+                : 'bg-[#faf9f6] border-[#e4e2dd] hover:border-[#c3c7c7]'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`p-1.5 rounded-lg ${
+                  isReaderPick ? 'bg-[#ffecb3] text-[#b78103]' : 'bg-[#e4e2dd] text-[#737878]'
+                }`}
+              >
+                <Bookmark className={`w-4 h-4 ${isReaderPick ? 'fill-[#b78103]' : ''}`} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-[#171e1e]">독자픽 도서로 지정</div>
+                <div className="text-[11px] text-[#737878]">
+                  독자서점 추천 도서로 분류되며, 품절 시 대시보드 재고부족 알림 대상이 됩니다.
+                </div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={isReaderPick}
+              onChange={(e) => setIsReaderPick(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-4 h-4 accent-[#b78103] rounded cursor-pointer"
+            />
           </div>
 
           {/* Description */}

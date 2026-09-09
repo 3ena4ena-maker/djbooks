@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Book } from '../../types';
+import { Book, SHELF_LOCATIONS } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
 import { CoverImageUploader } from '../common/CoverImageUploader';
 import { feedback } from '../../utils/feedback';
@@ -14,6 +14,7 @@ import {
   Store,
   Globe,
   ScanLine,
+  Bookmark
 } from 'lucide-react';
 
 interface AddBookModalProps {
@@ -38,13 +39,14 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   );
   const [category, setCategory] = useState(initialData?.category || '소설');
   const [bindingType, setBindingType] = useState(initialData?.bindingType || '양장본');
-  const [location, setLocation] = useState(initialData?.location || 'A1 선반');
+  const [location, setLocation] = useState(initialData?.location || '메인책상');
   const [coverImage, setCoverImage] = useState(
     initialData?.coverImage ||
       'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600'
   );
   const [initialStock, setInitialStock] = useState<number>(1);
   const [entryType, setEntryType] = useState<'초기 도서 입고' | '재입고'>('초기 도서 입고');
+  const [isReaderPick, setIsReaderPick] = useState(false);
   const [description, setDescription] = useState(initialData?.description || '');
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -212,6 +214,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
           bindingType,
           location,
           coverImage,
+          isReaderPick,
           description,
           publishedDate: new Date().toISOString().split('T')[0].replace(/-/g, '.'),
         },
@@ -575,14 +578,54 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
               <label className="text-xs text-[#434848] font-bold block mb-1">
                 서가 위치
               </label>
-              <input
-                type="text"
+              <select
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="예: A-1 선반"
-                className="w-full px-2.5 py-2 bg-white border border-[#c3c7c7] rounded-lg text-xs outline-none box-border"
-              />
+                className="w-full bg-white border border-[#c3c7c7] rounded-lg px-2.5 py-2 text-xs outline-none box-border"
+              >
+                {location && !SHELF_LOCATIONS.includes(location as any) && (
+                  <option value={location}>{location} (기존 위치)</option>
+                )}
+                {SHELF_LOCATIONS.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
             </div>
+          </div>
+
+          {/* 독자픽 여부 설정 */}
+          <div
+            onClick={() => setIsReaderPick(!isReaderPick)}
+            className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+              isReaderPick
+                ? 'bg-[#fff8e1] border-[#ffe082]'
+                : 'bg-[#faf9f6] border-[#e4e2dd] hover:border-[#c3c7c7]'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`p-1.5 rounded-lg ${
+                  isReaderPick ? 'bg-[#ffecb3] text-[#b78103]' : 'bg-[#e4e2dd] text-[#737878]'
+                }`}
+              >
+                <Bookmark className={`w-4 h-4 ${isReaderPick ? 'fill-[#b78103]' : ''}`} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-[#171e1e]">독자픽 도서로 등록</div>
+                <div className="text-[11px] text-[#737878]">
+                  독자서점 추천 도서로 지정되며, 품절 시 대시보드 재고부족 알림 대상이 됩니다.
+                </div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={isReaderPick}
+              onChange={(e) => setIsReaderPick(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-4 h-4 accent-[#b78103] rounded cursor-pointer"
+            />
           </div>
 
           {/* ⑧ Description */}

@@ -14,6 +14,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '양장본',
     location: 'A4 선반, 소설 구역',
     description: '삶의 무수한 갈림길에서 선택하지 못한 다른 삶들을 경험해보는 마법 같은 자정의 도서관 이야기.',
+    isReaderPick: false,
     createdAt: '2026-08-01T09:00:00.000Z',
     updatedAt: '2026-08-24T10:15:00.000Z'
   },
@@ -30,6 +31,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '무선제본',
     location: 'A2 선반, 외국소설',
     description: '퓰리처상 수상작. 나무와 인간의 거대한 교감과 운명을 다룬 웅장한 생태 문학의 정수.',
+    isReaderPick: false,
     createdAt: '2026-08-05T11:00:00.000Z',
     updatedAt: '2026-08-24T09:30:00.000Z'
   },
@@ -46,6 +48,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '무선제본',
     location: 'C3 선반, 에세이',
     description: '인간은 왜 여행을 떠나는가. 여행의 시작과 끝, 방랑과 귀환에 관한 깊은 사유.',
+    isReaderPick: false,
     createdAt: '2026-08-02T10:00:00.000Z',
     updatedAt: '2026-08-24T08:00:00.000Z'
   },
@@ -62,6 +65,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '무선제본',
     location: 'C1 선반, 아무튼 시리즈',
     description: '걸음마다 피어나는 일상의 잔잔한 행복과 위로를 담은 산책 이야기.',
+    isReaderPick: false,
     createdAt: '2026-08-10T14:20:00.000Z',
     updatedAt: '2026-08-24T11:00:00.000Z'
   },
@@ -78,6 +82,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '무선제본',
     location: 'A3 선반, 한국소설',
     description: '사랑하는 연인을 애도하는 가장 파격적이고도 순수한 사랑의 이야기.',
+    isReaderPick: false,
     createdAt: '2026-08-08T16:00:00.000Z',
     updatedAt: '2026-08-24T12:00:00.000Z'
   },
@@ -94,6 +99,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '양장본',
     location: 'B1 선반, 한국문학',
     description: '노벨문학상 수상 작가 한강의 대표작. 1980년 5월 광주의 숨결을 온몸으로 기억하는 서사.',
+    isReaderPick: false,
     createdAt: '2026-08-01T08:00:00.000Z',
     updatedAt: '2026-08-24T15:20:00.000Z'
   },
@@ -110,6 +116,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '중철제본',
     location: 'D1 선반, 독립출판 매대',
     description: '골목 안 작은 동네 책방을 열고 지켜온 소박하고 다정한 시간들의 기록.',
+    isReaderPick: false,
     createdAt: '2026-08-12T13:00:00.000Z',
     updatedAt: '2026-08-24T07:45:00.000Z'
   },
@@ -126,6 +133,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '양장본',
     location: 'A1 선반, 외국소설',
     description: '높은 벽에 둘러싸인 신비로운 도시와 현실 세계 사이를 오가는 환상적인 여정.',
+    isReaderPick: false,
     createdAt: '2026-08-04T10:00:00.000Z',
     updatedAt: '2026-08-23T16:30:00.000Z'
   },
@@ -142,6 +150,7 @@ export const INITIAL_BOOKS: Book[] = [
     bindingType: '양장본',
     location: 'B4 선반, 세계문학전집',
     description: '재즈 시대의 광기와 아메리칸 드림의 허상을 유려한 문체로 그려낸 20세기 최고의 고전.',
+    isReaderPick: false,
     createdAt: '2026-08-03T11:00:00.000Z',
     updatedAt: '2026-08-24T13:40:00.000Z'
   }

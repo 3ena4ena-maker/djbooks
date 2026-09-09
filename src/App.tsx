@@ -99,7 +99,7 @@ export default function App() {
       setCurrentView(view);
       if (view === 'inventory') {
         // Default to 'all' when navigating via hash unless specifically filtered
-        setInventoryFilter((prev) => (prev === 'out_of_stock' ? prev : 'all'));
+        setInventoryFilter((prev) => (prev === 'reader_pick_out_of_stock' || prev === 'reader_pick' ? prev : 'all'));
       }
       if (bookId) {
         setSelectedBookId(bookId);
@@ -143,7 +143,7 @@ export default function App() {
   };
 
   const handleFilterLowStock = () => {
-    setInventoryFilter('out_of_stock');
+    setInventoryFilter('reader_pick_out_of_stock');
     setCurrentView('inventory');
     window.location.hash = '#/inventory';
     window.scrollTo({ top: 0, behavior: 'smooth' });

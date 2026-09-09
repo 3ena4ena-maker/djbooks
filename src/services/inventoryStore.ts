@@ -178,6 +178,12 @@ class InventoryStore {
         parsedLogs = [...INITIAL_LOGS];
       }
 
+      // Ensure every book has a clean boolean isReaderPick (default false)
+      parsedBooks = parsedBooks.map((b) => ({
+        ...b,
+        isReaderPick: Boolean(b.isReaderPick),
+      }));
+
       this.books = parsedBooks;
       this.inventory = parsedInventory;
       this.logs = parsedLogs;
@@ -281,6 +287,7 @@ class InventoryStore {
         coverImage:
           b.cover_image_url ||
           'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+        isReaderPick: Boolean(b.is_reader_pick ?? (b as any).isReaderPick ?? false),
         createdAt: b.created_at || new Date().toISOString(),
         updatedAt: b.updated_at || new Date().toISOString(),
       }));
@@ -572,6 +579,7 @@ class InventoryStore {
           'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
         location: invData?.location || 'A1 선반',
         quantity: Number(invData?.quantity) || 0,
+        isReaderPick: Boolean(bookData.is_reader_pick ?? (bookData as any).isReaderPick ?? false),
         createdAt: bookData.created_at,
         updatedAt: bookData.updated_at,
       };
@@ -604,16 +612,17 @@ class InventoryStore {
   }
 
   public getLowStockBooks(): BookWithStock[] {
-    const threshold = this.settings.lowStockThreshold;
+    // 홈 대시보드 재고부족 프리뷰: 독자픽으로 지정된 도서 중 품절(0권)된 책만
     return this.getBooksWithStock()
-      .filter((b) => b.quantity <= threshold)
-      .sort((a, b) => a.quantity - b.quantity);
+      .filter((b) => b.isReaderPick === true && b.quantity <= 0)
+      .sort((a, b) => a.title.localeCompare(b.title, 'ko'));
   }
 
   public getWeeklyStats() {
     const all = this.getBooksWithStock();
     const totalStock = all.reduce((sum, b) => sum + b.quantity, 0);
-    const lowStockCount = all.filter((b) => b.quantity <= this.settings.lowStockThreshold).length;
+    // 홈 대시보드 재고부족: isReaderPick === true AND stock === 0 (독자픽 품절 도서만 카운트)
+    const lowStockCount = all.filter((b) => b.isReaderPick === true && b.quantity <= 0).length;
 
     // 대한민국 표준시(KST, UTC+9) 기준 이번 주 월요일 00:00:00.000 ~ 일요일 23:59:59.999 계산
     const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -872,29 +881,45 @@ class InventoryStore {
   ): Promise<BookWithStock> {
     const generatedBookId = generateUUID();
     const now = new Date().toISOString();
+    const isReaderPick = Boolean(bookData.isReaderPick ?? false);
 
     let finalBookId = generatedBookId;
 
     if (isSupabaseConfigured) {
       try {
+        const bookPayload: Record<string, unknown> = {
+          id: generatedBookId,
+          isbn: bookData.isbn,
+          title: bookData.title,
+          author: bookData.author,
+          publisher: bookData.publisher,
+          price: bookData.price,
+          category: bookData.category || '소설',
+          description: bookData.description || null,
+          cover_image_url: bookData.coverImage,
+          is_reader_pick: isReaderPick,
+          created_at: now,
+          updated_at: now,
+        };
+
         // Insert into Supabase books table
-        const { data: insertedBook, error: bErr } = await supabase
+        let { data: insertedBook, error: bErr } = await supabase
           .from('books')
-          .insert({
-            id: generatedBookId,
-            isbn: bookData.isbn,
-            title: bookData.title,
-            author: bookData.author,
-            publisher: bookData.publisher,
-            price: bookData.price,
-            category: bookData.category || '소설',
-            description: bookData.description || null,
-            cover_image_url: bookData.coverImage,
-            created_at: now,
-            updated_at: now,
-          })
+          .insert(bookPayload)
           .select('id, created_at, updated_at')
           .single();
+
+        // If is_reader_pick column does not exist yet in db, retry without it
+        if (bErr && (bErr.message?.includes('is_reader_pick') || (bErr as any).code === '42703')) {
+          delete bookPayload.is_reader_pick;
+          const retryRes = await supabase
+            .from('books')
+            .insert(bookPayload)
+            .select('id, created_at, updated_at')
+            .single();
+          insertedBook = retryRes.data;
+          bErr = retryRes.error;
+        }
 
         if (bErr) throw bErr;
         if (insertedBook?.id) {
@@ -928,6 +953,7 @@ class InventoryStore {
 
     const newBook: Book = {
       ...bookData,
+      isReaderPick,
       id: finalBookId,
       createdAt: now,
       updatedAt: now,
@@ -1005,6 +1031,104 @@ class InventoryStore {
     return true;
   }
 
+  public async toggleReaderPick(bookId: string): Promise<boolean> {
+    const book = this.books.find((b) => b.id === bookId);
+    if (!book) return false;
+
+    const newPickStatus = !book.isReaderPick;
+    // 중요한 요구사항: 독자픽 변경 시 최근 수정일(updatedAt)은 변경하지 않는다!
+    book.isReaderPick = newPickStatus;
+
+    this.saveToStorage();
+    this.notify();
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase
+          .from('books')
+          .update({
+            is_reader_pick: newPickStatus,
+            updated_at: book.updatedAt, // 기존 수정일 유지
+          })
+          .eq('id', bookId);
+
+        if (error) {
+          console.warn('[InventoryStore] Supabase is_reader_pick update error (column might not exist yet):', error.message);
+        }
+      } catch (e) {
+        console.warn('[InventoryStore] Error updating reader pick in Supabase:', e);
+      }
+    }
+
+    return newPickStatus;
+  }
+
+  // 여러 도서의 서가 위치 일괄 변경
+  public async batchUpdateLocation(
+    bookIds: string[],
+    newLocation: string
+  ): Promise<{ successCount: number; failCount: number }> {
+    if (!bookIds || bookIds.length === 0) {
+      return { successCount: 0, failCount: 0 };
+    }
+
+    const now = new Date().toISOString();
+    const validBookIds: string[] = [];
+
+    // 1. Local Optimistic Update
+    for (const id of bookIds) {
+      const book = this.books.find((b) => b.id === id);
+      if (book) {
+        book.location = newLocation;
+        // 서가 위치 변경은 일반 도서 정보 수정이므로 최근 수정일을 변경
+        book.updatedAt = now;
+        this.locations[id] = newLocation;
+        validBookIds.push(id);
+      }
+    }
+
+    this.saveToStorage();
+    this.notify();
+
+    // 2. Supabase Sync
+    let failCount = 0;
+    if (isSupabaseConfigured && validBookIds.length > 0) {
+      try {
+        // inventory 테이블의 서가 위치 일괄 갱신
+        const { error: invErr } = await supabase
+          .from('inventory')
+          .update({
+            location: newLocation,
+            updated_at: now,
+          })
+          .in('book_id', validBookIds);
+
+        if (invErr) {
+          console.error('[InventoryStore] Batch update inventory location error:', invErr);
+          failCount = validBookIds.length;
+        }
+
+        // books 테이블의 수정일 일괄 갱신
+        const { error: bookErr } = await supabase
+          .from('books')
+          .update({
+            updated_at: now,
+          })
+          .in('id', validBookIds);
+
+        if (bookErr) {
+          console.warn('[InventoryStore] Batch update books updated_at error:', bookErr);
+        }
+      } catch (err) {
+        console.error('[InventoryStore] Exception in batchUpdateLocation:', err);
+        failCount = validBookIds.length;
+      }
+    }
+
+    const successCount = validBookIds.length - failCount;
+    return { successCount, failCount };
+  }
+
   private async persistBookUpdateToSupabase(bookId: string, updates: Partial<Book>) {
     try {
       const payload: Record<string, unknown> = {
@@ -1017,8 +1141,20 @@ class InventoryStore {
       if (updates.category !== undefined) payload.category = updates.category;
       if (updates.description !== undefined) payload.description = updates.description;
       if (updates.coverImage !== undefined) payload.cover_image_url = updates.coverImage;
+      if (updates.isReaderPick !== undefined) payload.is_reader_pick = updates.isReaderPick;
 
-      await supabase.from('books').update(payload).eq('id', bookId);
+      let { error } = await supabase.from('books').update(payload).eq('id', bookId);
+
+      // If is_reader_pick column does not exist yet in db, retry without it
+      if (error && (error.message?.includes('is_reader_pick') || (error as any).code === '42703')) {
+        delete payload.is_reader_pick;
+        const retry = await supabase.from('books').update(payload).eq('id', bookId);
+        error = retry.error;
+      }
+
+      if (error) {
+        console.error('Error updating book in Supabase:', error);
+      }
 
       if (updates.location) {
         await supabase

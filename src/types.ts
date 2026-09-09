@@ -12,6 +12,8 @@ export interface DbBook {
   category?: string | null;
   description?: string | null;
   cover_image_url?: string | null;
+  is_reader_pick?: boolean | null;
+  isReaderPick?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +35,21 @@ export interface DbInventoryTransaction {
   created_at: string;
 }
 
+// 정해진 서가 위치 선택 항목 9개
+export const SHELF_LOCATIONS = [
+  '메인책상',
+  'A-1책장',
+  'A-2책장',
+  'A-3책장',
+  'A-4책장',
+  'A-5책장',
+  'A-6책장',
+  'B책장',
+  'C책장',
+] as const;
+
+export type ShelfLocation = (typeof SHELF_LOCATIONS)[number];
+
 // Frontend Model Interfaces
 export interface Book {
   id: string;
@@ -47,6 +64,7 @@ export interface Book {
   bindingType?: string; // e.g., '양장본', '무선제본'
   location?: string; // e.g., 'A4 선반, 소설 구역'
   description?: string;
+  isReaderPick: boolean; // 독자픽 도서 여부 (기본값 false)
   createdAt: string;
   updatedAt: string;
 }
@@ -76,7 +94,7 @@ export interface BookWithStock extends Book {
 
 export type ViewType = 'dashboard' | 'scanner' | 'inventory' | 'orders' | 'detail' | 'history' | 'settings';
 
-export type InventoryFilter = 'all' | 'in_stock' | 'out_of_stock';
+export type InventoryFilter = 'all' | 'in_stock' | 'out_of_stock' | 'reader_pick' | 'reader_pick_out_of_stock';
 export type InventorySort = 'updated' | 'stock_asc' | 'stock_desc' | 'title' | 'price_desc';
 
 // Customer Book Order (손님 주문/예약 도서)

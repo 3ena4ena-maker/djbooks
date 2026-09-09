@@ -24,7 +24,8 @@ import {
   X,
   FileEdit,
   Camera,
-  UploadCloud
+  UploadCloud,
+  Bookmark
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -228,6 +229,32 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           <div className="flex flex-col gap-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const newStatus = await inventoryStore.toggleReaderPick(book.id);
+                      feedback.playBeep('click');
+                      onShowToast(
+                        newStatus
+                          ? `'${book.title}'이(가) 독자픽으로 지정되었습니다.`
+                          : `'${book.title}'의 독자픽 지정이 해제되었습니다.`
+                      );
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                      book.isReaderPick
+                        ? 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'
+                        : 'bg-white text-[#737878] border border-[#c3c7c7] hover:text-[#171e1e] hover:border-[#171e1e]'
+                    }`}
+                    title={book.isReaderPick ? '클릭 시 독자픽 해제' : '클릭 시 독자픽 지정'}
+                  >
+                    <Bookmark className={`w-3.5 h-3.5 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`} />
+                    <span>{book.isReaderPick ? '독자픽 도서' : '독자픽 지정'}</span>
+                  </button>
+                  <span className="text-xs text-[#737878] bg-[#f0eee9] px-2 py-0.5 rounded-md font-medium">
+                    {book.category || '소설'}
+                  </span>
+                </div>
                 <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl sm:text-4xl md:text-5xl font-bold text-[#171e1e] mb-2 tracking-tight break-words">
                   {book.title}
                 </h1>

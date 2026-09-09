@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { BookWithStock, InventoryFilter, InventorySort, CustomerOrder, CustomerOrderStatus, ViewType } from '../types';
+import {
+  BookWithStock,
+  InventoryFilter,
+  InventorySort,
+  CustomerOrder,
+  CustomerOrderStatus,
+  ViewType,
+  SHELF_LOCATIONS,
+  ShelfLocation,
+} from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { authStore } from '../services/authStore';
 import { BookCover } from '../components/common/BookCover';
@@ -29,7 +38,9 @@ import {
   Phone,
   Edit2,
   Check,
-  Sparkles
+  Sparkles,
+  Bookmark,
+  MapPin,
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -79,6 +90,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [bookToDelete, setBookToDelete] = useState<BookWithStock | null>(null);
   const [bookToEdit, setBookToEdit] = useState<BookWithStock | null>(null);
 
+  // Multi-select & Batch Shelf Location state
+  const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
+  const [batchLocation, setBatchLocation] = useState<ShelfLocation>('메인책상');
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
+
   // Customer Orders state
   const [orderFilter, setOrderFilter] = useState<OrderFilterType>('all');
   const [orderSearch, setOrderSearch] = useState<string>('');
@@ -107,6 +123,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const totalBooksCount = allBooks.length;
   const inStockBooksCount = allBooks.filter((b) => b.quantity > 0).length;
   const outOfStockBooksCount = allBooks.filter((b) => b.quantity <= 0).length;
+  const readerPickBooksCount = allBooks.filter((b) => b.isReaderPick === true).length;
 
   // Orders Count Statistics
   const totalOrdersCount = allOrders.length;
@@ -115,7 +132,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const completedOrdersCount = allOrders.filter((o) => o.status === '수령완료').length;
   const cancelledOrdersCount = allOrders.filter((o) => o.status === '취소됨').length;
 
-  // Books Filter logic (재고 수량 > 0 -> 재고 있음 / 재고 수량 = 0 -> 품절)
+  // Books Filter logic
   const filteredBooks = allBooks.filter((book) => {
     // Search query
     if (search.trim()) {
@@ -135,6 +152,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
     if (filter === 'out_of_stock') {
       return book.quantity <= 0;
+    }
+    if (filter === 'reader_pick') {
+      return book.isReaderPick === true;
+    }
+    if (filter === 'reader_pick_out_of_stock') {
+      return book.isReaderPick === true && book.quantity <= 0;
     }
     return true;
   });
@@ -250,6 +273,58 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const handleOpenDeleteConfirm = (e: React.MouseEvent, book: BookWithStock) => {
     e.stopPropagation();
     setBookToDelete(book);
+  };
+
+  const handleToggleReaderPick = async (e: React.MouseEvent, book: BookWithStock) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const newStatus = await inventoryStore.toggleReaderPick(book.id);
+    feedback.playBeep('click');
+    if (newStatus) {
+      onShowToast(`'${book.title}'이(가) 독자픽으로 지정되었습니다.`);
+    } else {
+      onShowToast(`'${book.title}'의 독자픽 지정이 해제되었습니다.`);
+    }
+  };
+
+  // 도서 선택 및 서가 위치 일괄 변경 핸들러
+  const handleToggleSelect = (bookId: string) => {
+    setSelectedBookIds((prev) =>
+      prev.includes(bookId) ? prev.filter((id) => id !== bookId) : [...prev, bookId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    setSelectedBookIds(sortedBooks.map((b) => b.id));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedBookIds([]);
+  };
+
+  const handleBatchUpdateLocation = async () => {
+    if (selectedBookIds.length === 0) return;
+    setIsBatchUpdating(true);
+    try {
+      const { successCount, failCount } = await inventoryStore.batchUpdateLocation(
+        selectedBookIds,
+        batchLocation
+      );
+      if (failCount === 0) {
+        feedback.playBeep('success');
+        onShowToast(`선택한 도서 ${successCount}권의 서가 위치가 '${batchLocation}'(으)로 일괄 변경되었습니다.`);
+      } else {
+        feedback.playBeep('warning');
+        onShowToast(`${successCount}권 변경 완료, ${failCount}권 저장 실패.`);
+      }
+      setSelectedBookIds([]);
+    } catch (err) {
+      console.error(err);
+      feedback.playBeep('warning');
+      onShowToast('서가 위치 일괄 변경 중 오류가 발생했습니다.');
+    } finally {
+      setIsBatchUpdating(false);
+    }
   };
 
   const handleConfirmDelete = () => {
@@ -418,12 +493,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         <div className="space-y-6">
           {/* Filter and Sort Bar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
-            {/* Filter Chips: 전체 / 🟢 재고 있음 / 🔴 품절 */}
+            {/* Filter Chips: 전체 / 🟢 재고 있음 / 🔴 품절 / 독자픽 */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
               {[
                 { id: 'all', label: `전체 ${totalBooksCount}` },
                 { id: 'in_stock', label: `🟢 재고 있음 ${inStockBooksCount}` },
                 { id: 'out_of_stock', label: `🔴 품절 ${outOfStockBooksCount}` },
+                { id: 'reader_pick', label: `독자픽 ${readerPickBooksCount}` },
               ].map((item) => {
                 const isSelected = filter === item.id;
                 return (
@@ -489,14 +565,130 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             </div>
           </div>
 
+          {/* 도서 다중 선택 및 서가 위치 일괄 변경 툴바 */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <label className="flex items-center gap-2 text-xs font-bold text-[#171e1e] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  title="현재 목록 전체 선택 / 해제"
+                  checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate =
+                        selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
+                    }
+                  }}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      handleSelectAll();
+                    } else {
+                      handleClearSelection();
+                    }
+                  }}
+                  className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                />
+                <span>전체 선택</span>
+              </label>
+
+              {selectedBookIds.length > 0 ? (
+                <span className="text-xs font-bold bg-[#171e1e] text-white px-2.5 py-0.5 rounded-full">
+                  {selectedBookIds.length}권 선택됨
+                </span>
+              ) : (
+                <span className="text-xs text-[#737878]">
+                  (총 {sortedBooks.length}권 중)
+                </span>
+              )}
+
+              {selectedBookIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  className="text-xs text-[#737878] hover:text-[#171e1e] underline cursor-pointer"
+                >
+                  선택 해제
+                </button>
+              )}
+            </div>
+
+            {/* 일괄 서가 위치 변경 컨트롤 */}
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <span className="text-xs font-bold text-[#434848] whitespace-nowrap">
+                서가 위치 변경:
+              </span>
+              <select
+                value={batchLocation}
+                onChange={(e) => setBatchLocation(e.target.value as ShelfLocation)}
+                disabled={selectedBookIds.length === 0}
+                className="bg-white border border-[#c3c7c7] rounded-xl px-2.5 py-1.5 text-xs font-semibold text-[#171e1e] outline-none disabled:bg-[#eae8e3] disabled:text-[#a0a5a5] cursor-pointer disabled:cursor-not-allowed"
+              >
+                {SHELF_LOCATIONS.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={selectedBookIds.length === 0 || isBatchUpdating}
+                onClick={handleBatchUpdateLocation}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  selectedBookIds.length > 0
+                    ? 'bg-[#171e1e] text-white hover:bg-[#2c3333] cursor-pointer shadow-xs active:scale-95'
+                    : 'bg-[#e4e2dd] text-[#a0a5a5] cursor-not-allowed'
+                }`}
+              >
+                {isBatchUpdating ? '변경 중...' : '서가 위치 변경'}
+              </button>
+            </div>
+          </div>
+
+          {/* 홈 대시보드 재고부족 연동 필터 활성화 시 안내 배너 */}
+          {filter === 'reader_pick_out_of_stock' && (
+            <div className="flex items-center justify-between bg-[#fff8e1] border border-[#ffe082] px-4 py-2.5 rounded-xl text-xs text-[#b78103] shadow-xs">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertTriangle className="w-4 h-4 text-[#ba1a1a]" />
+                <span>홈 대시보드 연동: 독자픽 품절 도서만 표시 중 ({filteredBooks.length}권)</span>
+              </div>
+              <button
+                onClick={() => setFilter('all')}
+                className="font-bold underline hover:text-[#8d6200] cursor-pointer"
+              >
+                전체 도서 보기
+              </button>
+            </div>
+          )}
+
           {/* DESKTOP TABLE VIEW */}
           <div className="hidden md:block bg-[#ffffff] rounded-2xl border border-[#c3c7c7] overflow-hidden shadow-xs">
             <table className="w-full text-left border-collapse font-['Public_Sans','Noto_Sans_KR',sans-serif]">
               <thead>
                 <tr className="bg-[#f5f3ee] border-b border-[#c3c7c7] text-xs font-bold uppercase tracking-wider text-[#434848]">
-                  <th className="py-3.5 px-5 w-16">표지</th>
+                  <th className="py-3.5 px-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      title="전체 선택 / 해제"
+                      checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate =
+                            selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
+                        }
+                      }}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          handleSelectAll();
+                        } else {
+                          handleClearSelection();
+                        }
+                      }}
+                      className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                    />
+                  </th>
+                  <th className="py-3.5 px-4 w-16">표지</th>
                   <th className="py-3.5 px-5">도서명 및 저자</th>
-                  <th className="py-3.5 px-5">ISBN / 출판사</th>
+                  <th className="py-3.5 px-5">ISBN / 출판사 / 위치</th>
                   <th className="py-3.5 px-5">현재 재고</th>
                   <th className="py-3.5 px-5 text-right">판매가</th>
                   <th className="py-3.5 px-5 text-right">최근 수정일</th>
@@ -506,7 +698,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               <tbody className="divide-y divide-[#e4e2dd] text-sm">
                 {sortedBooks.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-[#737878]">
+                    <td colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-[#737878]">
                       일치하는 도서가 없습니다.
                     </td>
                   </tr>
@@ -515,25 +707,69 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     <tr
                       key={book.id}
                       onClick={() => onSelectBook(book.id)}
-                      className="hover:bg-[#f5f3ee] transition-colors cursor-pointer group"
+                      className={`transition-colors cursor-pointer group ${
+                        selectedBookIds.includes(book.id)
+                          ? 'bg-[#f4f2ec] hover:bg-[#eae8e1]'
+                          : 'hover:bg-[#f5f3ee]'
+                      }`}
                     >
+                      {/* Checkbox */}
+                      <td className="py-3.5 px-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedBookIds.includes(book.id)}
+                          onChange={() => handleToggleSelect(book.id)}
+                          className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                        />
+                      </td>
+
                       {/* Cover */}
-                      <td className="py-3.5 px-5 align-middle">
+                      <td className="py-3.5 px-4 align-middle">
                         <BookCover src={book.coverImage} alt={book.title} size="sm" />
                       </td>
 
                       {/* Title & Author */}
                       <td className="py-3.5 px-5 align-middle">
-                        <div className="font-bold text-[#171e1e] group-hover:underline">
-                          {book.title}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleReaderPick(e, book)}
+                            className={`p-1 rounded-md transition-all cursor-pointer ${
+                              book.isReaderPick
+                                ? 'text-[#b78103] bg-[#fff8e1] hover:bg-[#ffecb3]'
+                                : 'text-[#c3c7c7] hover:text-[#171e1e] hover:bg-[#eae8e3]'
+                            }`}
+                            title={book.isReaderPick ? '독자픽 해제' : '독자픽으로 지정'}
+                          >
+                            <Bookmark
+                              className={`w-4 h-4 transition-transform active:scale-90 ${
+                                book.isReaderPick ? 'fill-[#b78103]' : ''
+                              }`}
+                            />
+                          </button>
+                          <span className="font-bold text-[#171e1e] group-hover:underline">
+                            {book.title}
+                          </span>
+                          {book.isReaderPick && (
+                            <span className="text-[10px] font-bold bg-[#fff8e1] text-[#b78103] border border-[#ffe082] px-1.5 py-0.5 rounded-md whitespace-nowrap">
+                              독자픽
+                            </span>
+                          )}
                         </div>
-                        <div className="text-xs text-[#737878] mt-0.5">{book.author}</div>
+                        <div className="text-xs text-[#737878] mt-0.5 ml-7">{book.author}</div>
                       </td>
 
-                      {/* ISBN / Publisher */}
+                      {/* ISBN / Publisher / Location */}
                       <td className="py-3.5 px-5 align-middle">
                         <div className="font-mono text-xs text-[#171e1e]">{book.isbn}</div>
-                        <div className="text-xs text-[#737878] mt-0.5">{book.publisher}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className="text-xs text-[#737878]">{book.publisher}</span>
+                          {book.location && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-[#e9e2d1] text-[#434848] px-1.5 py-0.5 rounded-md">
+                              📍 {book.location}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Stock & Badge */}
@@ -612,18 +848,59 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <div
                   key={book.id}
                   onClick={() => onSelectBook(book.id)}
-                  className="bg-white rounded-2xl p-4 border border-[#e9e2d1] hover:border-[#171e1e] transition-all shadow-xs flex flex-col gap-3 cursor-pointer"
+                  className={`rounded-2xl p-4 border transition-all shadow-xs flex flex-col gap-3 cursor-pointer ${
+                    selectedBookIds.includes(book.id)
+                      ? 'bg-[#f4f2ec] border-[#171e1e] ring-1 ring-[#171e1e]'
+                      : 'bg-white border-[#e9e2d1] hover:border-[#171e1e]'
+                  }`}
                 >
-                  <div className="flex items-start gap-3.5">
+                  <div className="flex items-start gap-3">
+                    {/* Mobile Checkbox */}
+                    <div className="pt-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedBookIds.includes(book.id)}
+                        onChange={() => handleToggleSelect(book.id)}
+                        className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                      />
+                    </div>
                     <BookCover src={book.coverImage} alt={book.title} size="md" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-bold text-[#171e1e] text-sm line-clamp-1">
-                          {book.title}
-                        </h3>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleReaderPick(e, book)}
+                            className={`p-1 rounded-md transition-all cursor-pointer flex-shrink-0 ${
+                              book.isReaderPick
+                                ? 'text-[#b78103] bg-[#fff8e1]'
+                                : 'text-[#c3c7c7] hover:text-[#171e1e]'
+                            }`}
+                            title={book.isReaderPick ? '독자픽 해제' : '독자픽으로 지정'}
+                          >
+                            <Bookmark
+                              className={`w-4 h-4 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`}
+                            />
+                          </button>
+                          <h3 className="font-bold text-[#171e1e] text-sm truncate">
+                            {book.title}
+                          </h3>
+                          {book.isReaderPick && (
+                            <span className="text-[9px] font-bold bg-[#fff8e1] text-[#b78103] border border-[#ffe082] px-1.5 py-0.5 rounded-md whitespace-nowrap flex-shrink-0">
+                              독자픽
+                            </span>
+                          )}
+                        </div>
                         <StockBadge quantity={book.quantity} />
                       </div>
-                      <p className="text-xs text-[#737878] mt-0.5">{book.author} · {book.publisher}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <p className="text-xs text-[#737878]">{book.author} · {book.publisher}</p>
+                        {book.location && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-[#e9e2d1] text-[#434848] px-1.5 py-0.2 rounded">
+                            📍 {book.location}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#f0eee9]">
                         <span className="font-mono text-xs text-[#737878]">
                           재고 <strong className="text-sm text-[#171e1e]">{book.quantity}권</strong>

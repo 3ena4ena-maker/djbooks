@@ -491,76 +491,78 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       {/* ========================================================================= */}
       {activeTab === 'books' && (
         <div className="space-y-6">
-          {/* Filter and Sort Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
-            {/* Filter Chips: 전체 / 🟢 재고 있음 / 🔴 품절 / 독자픽 */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              {[
-                { id: 'all', label: `전체 ${totalBooksCount}` },
-                { id: 'in_stock', label: `🟢 재고 있음 ${inStockBooksCount}` },
-                { id: 'out_of_stock', label: `🔴 품절 ${outOfStockBooksCount}` },
-                { id: 'reader_pick', label: `독자픽 ${readerPickBooksCount}` },
-              ].map((item) => {
-                const isSelected = filter === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setFilter(item.id as InventoryFilter)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#171e1e] text-white shadow-xs'
-                        : 'bg-[#ffffff] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3]'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Search & Sort on right */}
-            <div className="flex items-center gap-2">
-              {/* Search input */}
-              <div className="relative flex-1 sm:w-60">
-                <Search className="w-3.5 h-3.5 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="도서명, 저자, ISBN..."
-                  className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs placeholder-[#737878] focus:border-[#171e1e] outline-none"
-                />
+          {/* Sticky Category Tabs (Filter and Sort Bar) */}
+          <div className="sticky top-16 z-20 bg-[#fbf9f4]/95 backdrop-blur-md py-2.5 -my-2.5 transition-all">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1] shadow-xs">
+              {/* Filter Chips: 전체 / 🟢 재고 있음 / 🔴 품절 / 독자픽 */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                {[
+                  { id: 'all', label: `전체 ${totalBooksCount}` },
+                  { id: 'in_stock', label: `🟢 재고 있음 ${inStockBooksCount}` },
+                  { id: 'out_of_stock', label: `🔴 품절 ${outOfStockBooksCount}` },
+                  { id: 'reader_pick', label: `독자픽 ${readerPickBooksCount}` },
+                ].map((item) => {
+                  const isSelected = filter === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setFilter(item.id as InventoryFilter)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#171e1e] text-white shadow-xs'
+                          : 'bg-[#ffffff] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3]'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Sort Dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowSortDropdown(!showSortDropdown)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs font-semibold text-[#171e1e] hover:bg-[#f0eee9] transition-colors cursor-pointer"
-                >
-                  <span className="text-[#737878]">정렬</span>
-                  <span>{sortLabels[sort]}</span>
-                  <ChevronDown className="w-3.5 h-3.5 text-[#737878]" />
-                </button>
+              {/* Search & Sort on right */}
+              <div className="flex items-center gap-2">
+                {/* Search input */}
+                <div className="relative flex-1 sm:w-60">
+                  <Search className="w-3.5 h-3.5 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="도서명, 저자, ISBN..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs placeholder-[#737878] focus:border-[#171e1e] outline-none"
+                  />
+                </div>
 
-                {showSortDropdown && (
-                  <div className="absolute right-0 mt-1.5 w-36 bg-white border border-[#c3c7c7] rounded-xl shadow-lg z-30 py-1 text-xs">
-                    {(Object.keys(sortLabels) as InventorySort[]).map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          setSort(s);
-                          setShowSortDropdown(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 hover:bg-[#f5f3ee] transition-colors cursor-pointer ${
-                          sort === s ? 'font-bold text-[#171e1e] bg-[#f0eee9]' : 'text-[#434848]'
-                        }`}
-                      >
-                        {sortLabels[s]}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Sort Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSortDropdown(!showSortDropdown)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs font-semibold text-[#171e1e] hover:bg-[#f0eee9] transition-colors cursor-pointer"
+                  >
+                    <span className="text-[#737878]">정렬</span>
+                    <span>{sortLabels[sort]}</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-[#737878]" />
+                  </button>
+
+                  {showSortDropdown && (
+                    <div className="absolute right-0 mt-1.5 w-36 bg-white border border-[#c3c7c7] rounded-xl shadow-lg z-30 py-1 text-xs">
+                      {(Object.keys(sortLabels) as InventorySort[]).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => {
+                            setSort(s);
+                            setShowSortDropdown(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 hover:bg-[#f5f3ee] transition-colors cursor-pointer ${
+                            sort === s ? 'font-bold text-[#171e1e] bg-[#f0eee9]' : 'text-[#434848]'
+                          }`}
+                        >
+                          {sortLabels[s]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -975,44 +977,46 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       {/* ========================================================================= */}
       {activeTab === 'orders' && (
         <div className="space-y-6">
-          {/* Order Filter and Search Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
-            {/* Filter Chips: 전체 / 🟠 주문접수 / 🔵 입고완료 / 🟢 수령완료 / ⚫ 취소 */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              {[
-                { id: 'all', label: `전체 ${totalOrdersCount}` },
-                { id: '주문접수', label: `🟠 주문접수 ${receivedOrdersCount}` },
-                { id: '입고완료', label: `🔵 입고완료 ${arrivedOrdersCount}` },
-                { id: '수령완료', label: `🟢 수령완료 ${completedOrdersCount}` },
-                { id: '취소됨', label: `⚫ 취소 ${cancelledOrdersCount}` },
-              ].map((item) => {
-                const isSelected = orderFilter === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setOrderFilter(item.id as OrderFilterType)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#171e1e] text-white shadow-xs'
-                        : 'bg-[#ffffff] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3]'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
+          {/* Sticky Order Filter and Search Bar */}
+          <div className="sticky top-16 z-20 bg-[#fbf9f4]/95 backdrop-blur-md py-2.5 -my-2.5 transition-all">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1] shadow-xs">
+              {/* Filter Chips: 전체 / 🟠 주문접수 / 🔵 입고완료 / 🟢 수령완료 / ⚫ 취소 */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                {[
+                  { id: 'all', label: `전체 ${totalOrdersCount}` },
+                  { id: '주문접수', label: `🟠 주문접수 ${receivedOrdersCount}` },
+                  { id: '입고완료', label: `🔵 입고완료 ${arrivedOrdersCount}` },
+                  { id: '수령완료', label: `🟢 수령완료 ${completedOrdersCount}` },
+                  { id: '취소됨', label: `⚫ 취소 ${cancelledOrdersCount}` },
+                ].map((item) => {
+                  const isSelected = orderFilter === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setOrderFilter(item.id as OrderFilterType)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#171e1e] text-white shadow-xs'
+                          : 'bg-[#ffffff] text-[#434848] border border-[#c3c7c7] hover:bg-[#eae8e3]'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* Order Search input */}
-            <div className="relative sm:w-64">
-              <Search className="w-3.5 h-3.5 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={orderSearch}
-                onChange={(e) => setOrderSearch(e.target.value)}
-                placeholder="도서명, 손님명, 연락처..."
-                className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs placeholder-[#737878] focus:border-[#171e1e] outline-none"
-              />
+              {/* Order Search input */}
+              <div className="relative sm:w-64">
+                <Search className="w-3.5 h-3.5 text-[#737878] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  placeholder="도서명, 손님명, 연락처..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#c3c7c7] rounded-full text-xs placeholder-[#737878] focus:border-[#171e1e] outline-none"
+                />
+              </div>
             </div>
           </div>
 

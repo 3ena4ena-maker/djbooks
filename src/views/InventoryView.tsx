@@ -308,6 +308,80 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setSelectedBookIds([]);
   };
 
+  // 서가 위치 일괄 변경 전 현재 화면에 보이는 도서 앵커 및 스크롤 위치를 캡처
+  const captureScrollAnchor = () => {
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+
+    // 현재 뷰포트 영역(상단 헤더/sticky 패널 아래 ~ 화면 하단)에 있는 첫 번째 도서 요소를 탐색
+    const bookElements = document.querySelectorAll<HTMLElement>('[data-book-id]');
+    let anchorBookId: string | null = null;
+    let anchorTop = 0;
+
+    for (let i = 0; i < bookElements.length; i++) {
+      const el = bookElements[i];
+      const rect = el.getBoundingClientRect();
+      // 화면 뷰포트 내(sticky 상단 바 아래인 80px 이상, 뷰포트 하단 안쪽)에 들어와 있는 요소
+      if (rect.top >= 80 && rect.top <= window.innerHeight - 80) {
+        anchorBookId = el.getAttribute('data-book-id');
+        anchorTop = rect.top;
+        break;
+      }
+    }
+
+    // 만약 뷰포트 중앙에 걸리는 요소가 없으면 선택된 첫 번째 도서의 엘리먼트 위치를 앵커로 활용
+    if (!anchorBookId && selectedBookIds.length > 0) {
+      const firstSelectedEl = document.querySelector<HTMLElement>(
+        `[data-book-id="${selectedBookIds[0]}"]`
+      );
+      if (firstSelectedEl) {
+        anchorBookId = selectedBookIds[0];
+        anchorTop = firstSelectedEl.getBoundingClientRect().top;
+      }
+    }
+
+    return { scrollY, anchorBookId, anchorTop };
+  };
+
+  // 캡처한 스냅샷을 기반으로 사용자가 보던 도서 목록의 시점 및 스크롤 위치를 복원
+  const restoreScrollPosition = (snapshot: {
+    scrollY: number;
+    anchorBookId: string | null;
+    anchorTop: number;
+  }) => {
+    const applyRestore = () => {
+      // 1순위: 앵커 도서가 화면에 존재할 경우, 그 도서의 뷰포트 상대 위치를 오차 없이 정밀 일치
+      if (snapshot.anchorBookId) {
+        const anchorEl = document.querySelector<HTMLElement>(
+          `[data-book-id="${snapshot.anchorBookId}"]`
+        );
+        if (anchorEl) {
+          const currentRect = anchorEl.getBoundingClientRect();
+          const delta = currentRect.top - snapshot.anchorTop;
+          if (Math.abs(delta) > 1) {
+            window.scrollBy({ top: delta, behavior: 'instant' });
+            return;
+          }
+          return;
+        }
+      }
+
+      // 2순위: 앵커 도서를 찾지 못한 경우 저장된 절대 스크롤 Y로 즉시 복원
+      const currentScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      if (Math.abs(currentScrollY - snapshot.scrollY) > 2) {
+        window.scrollTo({ top: snapshot.scrollY, behavior: 'instant' });
+      }
+    };
+
+    // React 렌더링 및 DOM 배치 이후 브라우저가 스크롤을 0으로 날리지 못하도록 다중 프레임 안전망 적용
+    requestAnimationFrame(() => {
+      applyRestore();
+      requestAnimationFrame(applyRestore);
+    });
+    setTimeout(applyRestore, 40);
+    setTimeout(applyRestore, 120);
+    setTimeout(applyRestore, 250);
+  };
+
   const handleBatchUpdateLocation = async () => {
     if (!isAdmin) {
       feedback.playBeep('warning');
@@ -315,15 +389,30 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       return;
     }
     if (selectedBookIds.length === 0) return;
+
+    // 1. 클릭된 버튼 포커스 해제 (포커스 리셋으로 인한 브라우저 자동 스크롤 0 점프 원천 방지)
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
+    // 2. 현재 사용자가 보고 있던 도서 앵커 및 스크롤 위치 스냅샷 캡처
+    const scrollSnapshot = captureScrollAnchor();
+
     setIsBatchUpdating(true);
     try {
       const { successCount, failCount } = await inventoryStore.batchUpdateLocation(
         selectedBookIds,
         batchLocation
       );
+
+      // 로컬 Optimistic 업데이트 직후 1차 스크롤 위치 보존
+      restoreScrollPosition(scrollSnapshot);
+
       if (failCount === 0) {
         feedback.playBeep('success');
-        onShowToast(`선택한 도서 ${successCount}권의 서가 위치가 '${batchLocation}'(으)로 일괄 변경되었습니다.`);
+        onShowToast(
+          `선택한 도서 ${successCount}권의 서가 위치가 '${batchLocation}'(으)로 일괄 변경되었습니다.`
+        );
       } else {
         feedback.playBeep('warning');
         onShowToast(`${successCount}권 변경 완료, ${failCount}권 저장 실패.`);
@@ -335,6 +424,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       onShowToast('서가 위치 일괄 변경 중 오류가 발생했습니다.');
     } finally {
       setIsBatchUpdating(false);
+      // 작업 완료 및 선택 해제 후 최종 스크롤 위치 유지
+      restoreScrollPosition(scrollSnapshot);
     }
   };
 
@@ -735,6 +826,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   sortedBooks.map((book) => (
                     <tr
                       key={book.id}
+                      data-book-id={book.id}
                       onClick={() => onSelectBook(book.id)}
                       className={`transition-colors cursor-pointer group ${
                         selectedBookIds.includes(book.id)
@@ -879,6 +971,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               sortedBooks.map((book) => (
                 <div
                   key={book.id}
+                  data-book-id={book.id}
                   onClick={() => onSelectBook(book.id)}
                   className={`rounded-2xl p-4 border transition-all shadow-xs flex flex-col gap-3 cursor-pointer ${
                     selectedBookIds.includes(book.id)

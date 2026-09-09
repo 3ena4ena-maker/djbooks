@@ -1126,8 +1126,7 @@ class InventoryStore {
       const book = this.books.find((b) => b.id === id);
       if (book) {
         book.location = newLocation;
-        // 서가 위치 변경은 일반 도서 정보 수정이므로 최근 수정일을 변경
-        book.updatedAt = now;
+        // 서가 위치 변경은 재고 보관 위치 변경이므로 정렬 순서 보존을 위해 도서 updatedAt은 유지
         this.locations[id] = newLocation;
         validBookIds.push(id);
       }
@@ -1152,18 +1151,6 @@ class InventoryStore {
         if (invErr) {
           console.error('[InventoryStore] Batch update inventory location error:', invErr);
           failCount = validBookIds.length;
-        }
-
-        // books 테이블의 수정일 일괄 갱신
-        const { error: bookErr } = await supabase
-          .from('books')
-          .update({
-            updated_at: now,
-          })
-          .in('id', validBookIds);
-
-        if (bookErr) {
-          console.warn('[InventoryStore] Batch update books updated_at error:', bookErr);
         }
       } catch (err) {
         console.error('[InventoryStore] Exception in batchUpdateLocation:', err);

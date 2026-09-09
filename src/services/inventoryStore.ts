@@ -1063,6 +1063,12 @@ class InventoryStore {
     const index = this.books.findIndex((b) => b.id === bookId);
     if (index === -1) return false;
 
+    // 관리자 권한 검사: 관리자가 아닌 경우 독자픽 변경 차단
+    if (updates.isReaderPick !== undefined && !authStore.isAdmin) {
+      console.warn('[InventoryStore] 관리자 권한이 없어 도서 수정 중 독자픽 변경이 차단되었습니다.');
+      delete updates.isReaderPick;
+    }
+
     // 카테고리가 업데이트된 경우 계층 구조 파싱 및 보존
     if (updates.category !== undefined || updates.categorySub !== undefined) {
       const targetCat = updates.category || updates.categorySub || '';
@@ -1097,6 +1103,12 @@ class InventoryStore {
   public async toggleReaderPick(bookId: string): Promise<boolean> {
     const book = this.books.find((b) => b.id === bookId);
     if (!book) return false;
+
+    // 관리자 권한 검사: 관리자 모드가 아니면 함수 즉시 종료 및 Supabase UPDATE 실행 차단
+    if (!authStore.isAdmin) {
+      console.warn('[InventoryStore] 관리자 권한이 없어 독자픽 변경이 차단되었습니다.');
+      return Boolean(book.isReaderPick);
+    }
 
     const prevStatus = Boolean(book.isReaderPick);
     const newPickStatus = !prevStatus;

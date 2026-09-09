@@ -231,30 +231,44 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-2.5">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const prevStatus = Boolean(book.isReaderPick);
-                      const newStatus = await inventoryStore.toggleReaderPick(book.id);
-                      feedback.playBeep('click');
-                      if (newStatus === prevStatus) {
-                        onShowToast(`'${book.title}'의 독자픽 상태를 저장하지 못했습니다. 다시 시도해주세요.`);
-                      } else if (newStatus) {
-                        onShowToast(`'${book.title}'이(가) 독자픽으로 지정되었습니다.`);
-                      } else {
-                        onShowToast(`'${book.title}'의 독자픽 지정이 해제되었습니다.`);
-                      }
-                    }}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs ${
-                      book.isReaderPick
-                        ? 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'
-                        : 'bg-white text-[#737878] border border-[#c3c7c7] hover:text-[#171e1e] hover:border-[#171e1e]'
-                    }`}
-                    title={book.isReaderPick ? '클릭 시 독자픽 해제' : '클릭 시 독자픽 지정'}
-                  >
-                    <Bookmark className={`w-3.5 h-3.5 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`} />
-                    <span>{book.isReaderPick ? '독자픽 도서' : '독자픽 지정'}</span>
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const prevStatus = Boolean(book.isReaderPick);
+                        const newStatus = await inventoryStore.toggleReaderPick(book.id);
+                        feedback.playBeep('click');
+                        if (newStatus === prevStatus) {
+                          onShowToast(`'${book.title}'의 독자픽 상태를 저장하지 못했습니다. 다시 시도해주세요.`);
+                        } else if (newStatus) {
+                          onShowToast(`'${book.title}'이(가) 독자픽으로 지정되었습니다.`);
+                        } else {
+                          onShowToast(`'${book.title}'의 독자픽 지정이 해제되었습니다.`);
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                        book.isReaderPick
+                          ? 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'
+                          : 'bg-white text-[#737878] border border-[#c3c7c7] hover:text-[#171e1e] hover:border-[#171e1e]'
+                      }`}
+                      title={book.isReaderPick ? '클릭 시 독자픽 해제' : '클릭 시 독자픽 지정'}
+                    >
+                      <Bookmark className={`w-3.5 h-3.5 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`} />
+                      <span>{book.isReaderPick ? '독자픽 도서' : '독자픽 지정'}</span>
+                    </button>
+                  ) : (
+                    <div
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold select-none cursor-default shadow-xs ${
+                        book.isReaderPick
+                          ? 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'
+                          : 'bg-[#faf9f6] text-[#737878] border border-[#e4e2dd]'
+                      }`}
+                      title={book.isReaderPick ? '독자픽 도서' : '독자픽 미지정'}
+                    >
+                      <Bookmark className={`w-3.5 h-3.5 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`} />
+                      <span>{book.isReaderPick ? '독자픽 도서' : '독자픽 미지정'}</span>
+                    </div>
+                  )}
                   <span className="text-xs text-[#737878] bg-[#f0eee9] px-2 py-0.5 rounded-md font-medium">
                     {getDisplayCategory(book)}
                   </span>

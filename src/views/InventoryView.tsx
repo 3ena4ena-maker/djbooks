@@ -288,6 +288,10 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const handleToggleReaderPick = async (e: React.MouseEvent, book: BookWithStock) => {
     e.stopPropagation();
     e.preventDefault();
+    if (!isAdmin) {
+      onShowToast('독자픽 지정 및 해제는 관리자 모드에서만 가능합니다.');
+      return;
+    }
     const prevStatus = Boolean(book.isReaderPick);
     const newStatus = await inventoryStore.toggleReaderPick(book.id);
     feedback.playBeep('click');
@@ -853,22 +857,43 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       {/* Title & Author */}
                       <td className="py-3.5 px-5 align-middle">
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => handleToggleReaderPick(e, book)}
-                            className={`p-1 rounded-md transition-all cursor-pointer ${
-                              book.isReaderPick
-                                ? 'text-[#b78103] bg-[#fff8e1] hover:bg-[#ffecb3]'
-                                : 'text-[#c3c7c7] hover:text-[#171e1e] hover:bg-[#eae8e3]'
-                            }`}
-                            title={book.isReaderPick ? '독자픽 해제' : '독자픽으로 지정'}
-                          >
-                            <Bookmark
-                              className={`w-4 h-4 transition-transform active:scale-90 ${
-                                book.isReaderPick ? 'fill-[#b78103]' : ''
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleReaderPick(e, book)}
+                              className={`p-1 rounded-md transition-all cursor-pointer ${
+                                book.isReaderPick
+                                  ? 'text-[#b78103] bg-[#fff8e1] hover:bg-[#ffecb3]'
+                                  : 'text-[#c3c7c7] hover:text-[#171e1e] hover:bg-[#eae8e3]'
                               }`}
-                            />
-                          </button>
+                              title={book.isReaderPick ? '독자픽 해제' : '독자픽으로 지정'}
+                            >
+                              <Bookmark
+                                className={`w-4 h-4 transition-transform active:scale-90 ${
+                                  book.isReaderPick ? 'fill-[#b78103]' : ''
+                                }`}
+                              />
+                            </button>
+                          ) : (
+                            <div
+                              className={`p-1 rounded-md cursor-default select-none ${
+                                book.isReaderPick
+                                  ? 'text-[#b78103] bg-[#fff8e1]'
+                                  : 'text-[#c3c7c7]'
+                              }`}
+                              title={book.isReaderPick ? '독자픽 도서' : '독자픽 미지정'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                              }}
+                            >
+                              <Bookmark
+                                className={`w-4 h-4 ${
+                                  book.isReaderPick ? 'fill-[#b78103]' : ''
+                                }`}
+                              />
+                            </div>
+                          )}
                           <span className="font-bold text-[#171e1e] group-hover:underline">
                             {book.title}
                           </span>
@@ -996,20 +1021,39 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <button
-                            type="button"
-                            onClick={(e) => handleToggleReaderPick(e, book)}
-                            className={`p-1 rounded-md transition-all cursor-pointer flex-shrink-0 ${
-                              book.isReaderPick
-                                ? 'text-[#b78103] bg-[#fff8e1]'
-                                : 'text-[#c3c7c7] hover:text-[#171e1e]'
-                            }`}
-                            title={book.isReaderPick ? '독자픽 해제' : '독자픽으로 지정'}
-                          >
-                            <Bookmark
-                              className={`w-4 h-4 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`}
-                            />
-                          </button>
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleReaderPick(e, book)}
+                              className={`p-1 rounded-md transition-all cursor-pointer flex-shrink-0 ${
+                                book.isReaderPick
+                                  ? 'text-[#b78103] bg-[#fff8e1]'
+                                  : 'text-[#c3c7c7] hover:text-[#171e1e]'
+                              }`}
+                              title={book.isReaderPick ? '독자픽 해제' : '독자픽으로 지정'}
+                            >
+                              <Bookmark
+                                className={`w-4 h-4 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`}
+                              />
+                            </button>
+                          ) : (
+                            <div
+                              className={`p-1 rounded-md flex-shrink-0 cursor-default select-none ${
+                                book.isReaderPick
+                                  ? 'text-[#b78103] bg-[#fff8e1]'
+                                  : 'text-[#c3c7c7]'
+                              }`}
+                              title={book.isReaderPick ? '독자픽 도서' : '독자픽 미지정'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                              }}
+                            >
+                              <Bookmark
+                                className={`w-4 h-4 ${book.isReaderPick ? 'fill-[#b78103]' : ''}`}
+                              />
+                            </div>
+                          )}
                           <h3 className="font-bold text-[#171e1e] text-sm truncate">
                             {book.title}
                           </h3>

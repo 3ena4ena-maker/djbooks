@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Book, SHELF_LOCATIONS } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
+import { authStore } from '../../services/authStore';
 import { CoverImageUploader } from '../common/CoverImageUploader';
 import { feedback } from '../../utils/feedback';
 import { cleanAndValidateIsbn } from '../../utils/isbnValidator';
@@ -597,11 +598,17 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 
           {/* 독자픽 여부 설정 */}
           <div
-            onClick={() => setIsReaderPick(!isReaderPick)}
-            className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-              isReaderPick
-                ? 'bg-[#fff8e1] border-[#ffe082]'
-                : 'bg-[#faf9f6] border-[#e4e2dd] hover:border-[#c3c7c7]'
+            onClick={() => {
+              if (authStore.isAdmin) {
+                setIsReaderPick(!isReaderPick);
+              }
+            }}
+            className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+              !authStore.isAdmin
+                ? 'bg-[#faf9f6] border-[#e4e2dd] opacity-70 cursor-not-allowed'
+                : isReaderPick
+                ? 'bg-[#fff8e1] border-[#ffe082] cursor-pointer'
+                : 'bg-[#faf9f6] border-[#e4e2dd] hover:border-[#c3c7c7] cursor-pointer'
             }`}
           >
             <div className="flex items-center gap-2.5">
@@ -615,16 +622,23 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
               <div>
                 <div className="text-xs font-bold text-[#171e1e]">독자픽 도서로 등록</div>
                 <div className="text-[11px] text-[#737878]">
-                  독자서점 추천 도서로 지정되며, 품절 시 대시보드 재고부족 알림 대상이 됩니다.
+                  {authStore.isAdmin
+                    ? '독자서점 추천 도서로 지정되며, 품절 시 대시보드 재고부족 알림 대상이 됩니다.'
+                    : '독자픽 설정은 관리자 모드에서만 변경할 수 있습니다.'}
                 </div>
               </div>
             </div>
             <input
               type="checkbox"
+              disabled={!authStore.isAdmin}
               checked={isReaderPick}
-              onChange={(e) => setIsReaderPick(e.target.checked)}
+              onChange={(e) => {
+                if (authStore.isAdmin) {
+                  setIsReaderPick(e.target.checked);
+                }
+              }}
               onClick={(e) => e.stopPropagation()}
-              className="w-4 h-4 accent-[#b78103] rounded cursor-pointer"
+              className="w-4 h-4 accent-[#b78103] rounded cursor-pointer disabled:cursor-not-allowed"
             />
           </div>
 

@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { ViewType, CustomerOrder, CustomerOrderStatus } from '../types';
 import { inventoryStore } from '../services/inventoryStore';
 import { authStore } from '../services/authStore';
-import { BookCover } from '../components/common/BookCover';
-import { StockBadge } from '../components/common/StockBadge';
 import { CustomerOrderModal } from '../components/modals/CustomerOrderModal';
 import { feedback } from '../utils/feedback';
 import {
@@ -72,7 +70,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const stats = inventoryStore.getWeeklyStats();
   const orderStats = inventoryStore.getCustomerOrderStats();
   const allOrders = inventoryStore.getCustomerOrders();
-  const lowStockBooks = inventoryStore.getLowStockBooks().slice(0, 4);
   const recentLogs = inventoryStore.getLogs().slice(0, 5);
 
   const filteredOrders = allOrders.filter((order) => {
@@ -220,7 +217,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Bento Grid Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid ${isAdmin ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'} gap-4`}>
         {/* Stat 1: 전체 재고 */}
         <div
           onClick={() => onNavigate('inventory')}
@@ -261,20 +258,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Stat 3: 재고 부족 */}
-        <div
-          onClick={onFilterLowStock}
-          className="bg-[#f5f3ee] rounded-2xl p-5 md:p-6 border border-[#e9e2d1] hover:border-[#ba1a1a] transition-all flex flex-col justify-between cursor-pointer group shadow-xs"
-        >
-          <span className="text-xs font-bold uppercase tracking-wider text-[#434848] mb-3 flex items-center gap-1.5">
-            <AlertTriangle className="w-4 h-4 text-[#ba1a1a]" />
-            재고 부족
-          </span>
-          <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#ba1a1a]">
-            {stats.lowStockCount}
-            <span className="text-base font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-1">종</span>
+        {/* Stat 3: 재고 부족 (관리자 모드 전용) */}
+        {isAdmin && (
+          <div
+            onClick={onFilterLowStock}
+            className="bg-[#f5f3ee] rounded-2xl p-5 md:p-6 border border-[#e9e2d1] hover:border-[#ba1a1a] transition-all flex flex-col justify-between cursor-pointer group shadow-xs"
+          >
+            <span className="text-xs font-bold uppercase tracking-wider text-[#434848] mb-3 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-[#ba1a1a]" />
+              재고 부족
+            </span>
+            <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl md:text-4xl font-bold text-[#ba1a1a]">
+              {stats.lowStockCount}
+              <span className="text-base font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-1">종</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Stat 4: 이번주 입출고 변동 (가시성 대폭 강화) */}
         <div
@@ -289,8 +288,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
 
-          {/* 입고 / 판매 분리 가시성 강화 카드 */}
-          <div className="grid grid-cols-2 gap-2 mt-1">
+          {/* 입고 / 판매 분리 가시성 강화 카드 (일반 고객 모드는 입고만, 관리자 모드는 입고 및 판매 모두 표시) */}
+          <div className={`grid ${isAdmin ? 'grid-cols-2' : 'grid-cols-1'} gap-2 mt-1`}>
             {/* 입고 블록 */}
             <div className="bg-white rounded-xl p-2.5 border border-[#c8e6c9] flex flex-col justify-between min-w-0">
               <span className="text-xs font-bold text-[#2e7d32] whitespace-nowrap flex items-center gap-1">
@@ -303,25 +302,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
-            {/* 판매 블록 */}
-            <div className="bg-white rounded-xl p-2.5 border border-[#ffcdd2] flex flex-col justify-between min-w-0">
-              <span className="text-xs font-bold text-[#c62828] whitespace-nowrap flex items-center gap-1">
-                <ShoppingBag className="w-3.5 h-3.5 flex-shrink-0" />
-                판매
-              </span>
-              <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl sm:text-2xl font-bold text-[#c62828] mt-0.5 whitespace-nowrap">
-                {stats.weeklySales}
-                <span className="text-xs font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-0.5 text-[#c62828]/80">건</span>
+            {/* 판매 블록 (관리자 모드 전용) */}
+            {isAdmin && (
+              <div className="bg-white rounded-xl p-2.5 border border-[#ffcdd2] flex flex-col justify-between min-w-0">
+                <span className="text-xs font-bold text-[#c62828] whitespace-nowrap flex items-center gap-1">
+                  <ShoppingBag className="w-3.5 h-3.5 flex-shrink-0" />
+                  판매
+                </span>
+                <div className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl sm:text-2xl font-bold text-[#c62828] mt-0.5 whitespace-nowrap">
+                  {stats.weeklySales}
+                  <span className="text-xs font-normal font-['Public_Sans','Noto_Sans_KR',sans-serif] ml-0.5 text-[#c62828]/80">건</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Left Quick Actions & Order Management & History, Right Low Stock */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column (8 cols on desktop) */}
-        <div className="lg:col-span-8 space-y-8">
+      {/* Main Content: Quick Actions, Order Management & Recent Activity */}
+      <div className="w-full space-y-8">
           {/* Quick Actions */}
           <div className="space-y-4">
             <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl font-bold text-[#171e1e] border-b border-[#c3c7c7]/60 pb-2">
@@ -693,60 +692,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Low Stock Preview + Store Note (4 cols on desktop) */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Low Stock Card */}
-          <div className="bg-[#f5f3ee] rounded-2xl p-5 md:p-6 border border-[#e9e2d1] flex flex-col shadow-xs">
-            <div className="flex justify-between items-center mb-5 pb-2 border-b border-[#c3c7c7]/50">
-              <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl font-bold text-[#171e1e] flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-[#ba1a1a]" />
-                재고 부족
-              </h3>
-              <span className="text-xs font-bold bg-[#ffdad6] text-[#93000a] px-2 py-0.5 rounded-full">
-                {stats.lowStockCount}권
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-3 flex-grow">
-              {lowStockBooks.length === 0 ? (
-                <div className="py-8 text-center text-[#737878] text-sm">
-                  현재 부족한 재고가 없습니다. 👍
-                </div>
-              ) : (
-                lowStockBooks.map((book) => (
-                  <div
-                    key={book.id}
-                    onClick={() => onSelectBook(book.id)}
-                    className="flex gap-3 bg-[#ffffff] rounded-xl p-3 border border-[#e9e2d1] hover:border-[#171e1e] transition-all items-center cursor-pointer shadow-xs group"
-                  >
-                    <BookCover src={book.coverImage} alt={book.title} size="sm" />
-                    <div className="flex-grow min-w-0">
-                      <h4 className="text-sm font-semibold text-[#171e1e] truncate group-hover:underline">
-                        {book.title}
-                      </h4>
-                      <p className="text-xs text-[#737878] truncate">
-                        {book.author}
-                      </p>
-                    </div>
-                    <div className="flex-shrink-0">
-                      <StockBadge quantity={book.quantity} showExactRemaining />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <button
-              onClick={onFilterLowStock}
-              className="mt-5 w-full py-2.5 bg-[#ffffff] border border-[#c3c7c7] rounded-xl text-xs font-bold text-[#171e1e] hover:bg-[#eae8e3] hover:border-[#171e1e] transition-all shadow-xs cursor-pointer"
-            >
-              전체 부족 재고 확인
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Customer Order Modal (Create / Edit) */}
+        {/* Customer Order Modal (Create / Edit) */}
       {isOrderModalOpen && (
         <CustomerOrderModal
           order={editingOrder}

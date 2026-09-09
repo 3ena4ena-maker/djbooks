@@ -765,22 +765,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             )}
           </div>
 
-          {/* 홈 대시보드 재고부족 연동 필터 활성화 시 안내 배너 */}
-          {filter === 'reader_pick_out_of_stock' && (
-            <div className="flex items-center justify-between bg-[#fff8e1] border border-[#ffe082] px-4 py-2.5 rounded-xl text-xs text-[#b78103] shadow-xs">
-              <div className="flex items-center gap-2 font-bold">
-                <AlertTriangle className="w-4 h-4 text-[#ba1a1a]" />
-                <span>홈 대시보드 연동: 독자픽 품절 도서만 표시 중 ({filteredBooks.length}권)</span>
-              </div>
-              <button
-                onClick={() => setFilter('all')}
-                className="font-bold underline hover:text-[#8d6200] cursor-pointer"
-              >
-                전체 도서 보기
-              </button>
-            </div>
-          )}
-
           {/* DESKTOP TABLE VIEW */}
           <div className="hidden md:block bg-[#ffffff] rounded-2xl border border-[#c3c7c7] overflow-hidden shadow-xs">
             <table className="w-full text-left border-collapse font-['Public_Sans','Noto_Sans_KR',sans-serif]">

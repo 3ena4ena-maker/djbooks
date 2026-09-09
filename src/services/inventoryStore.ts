@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { INITIAL_BOOKS, INITIAL_INVENTORY, INITIAL_LOGS } from '../data/mockData';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { authStore } from './authStore';
 
 const STORAGE_KEYS = {
   BOOKS: 'folio_books_v3',
@@ -1068,6 +1069,12 @@ class InventoryStore {
     bookIds: string[],
     newLocation: string
   ): Promise<{ successCount: number; failCount: number }> {
+    // 관리자 모드에서만 실행 가능하도록 권한 검사
+    if (!authStore.isAdmin) {
+      console.warn('[InventoryStore] 관리자 권한이 없어 서가 위치 일괄 변경이 거부되었습니다.');
+      return { successCount: 0, failCount: 0 };
+    }
+
     if (!bookIds || bookIds.length === 0) {
       return { successCount: 0, failCount: 0 };
     }

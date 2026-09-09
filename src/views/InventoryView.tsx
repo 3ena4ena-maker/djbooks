@@ -303,6 +303,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   };
 
   const handleBatchUpdateLocation = async () => {
+    if (!isAdmin) {
+      feedback.playBeep('warning');
+      onShowToast('서가 위치 변경은 관리자 모드에서만 가능합니다.');
+      return;
+    }
     if (selectedBookIds.length === 0) return;
     setIsBatchUpdating(true);
     try {
@@ -491,9 +496,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       {/* ========================================================================= */}
       {activeTab === 'books' && (
         <div className="space-y-6">
-          {/* Sticky Category Tabs (Filter and Sort Bar) */}
-          <div className="sticky top-16 z-20 bg-[#fbf9f4]/95 backdrop-blur-md py-2.5 -my-2.5 transition-all">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1] shadow-xs">
+          {/* ========================================================================= */}
+          {/* STICKY TOP CONTROLS PANEL (카테고리 탭 + 선택 및 일괄 서가 위치 변경 바) */}
+          {/* ========================================================================= */}
+          <div className="sticky top-16 z-20 bg-[#fbf9f4] pt-2 pb-3 border-b border-[#e9e2d1]/80 shadow-xs space-y-2.5">
+            {/* 1. Category Filter and Search/Sort Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#f5f3ee] p-2.5 sm:p-3 rounded-2xl border border-[#e9e2d1]">
               {/* Filter Chips: 전체 / 🟢 재고 있음 / 🔴 품절 / 독자픽 */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                 {[
@@ -565,84 +573,97 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* 도서 다중 선택 및 서가 위치 일괄 변경 툴바 */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1]">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <label className="flex items-center gap-2 text-xs font-bold text-[#171e1e] cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  title="현재 목록 전체 선택 / 해제"
-                  checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
-                  ref={(el) => {
-                    if (el) {
-                      el.indeterminate =
-                        selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
-                    }
-                  }}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      handleSelectAll();
-                    } else {
-                      handleClearSelection();
-                    }
-                  }}
-                  className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
-                />
-                <span>전체 선택</span>
-              </label>
+            {/* 2. 도서 다중 선택 및 서가 위치 일괄 변경 툴바 */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#f5f3ee] p-2.5 sm:p-3 rounded-2xl border border-[#e9e2d1]">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#171e1e] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    title="현재 목록 전체 선택 / 해제"
+                    checked={sortedBooks.length > 0 && selectedBookIds.length === sortedBooks.length}
+                    ref={(el) => {
+                      if (el) {
+                        el.indeterminate =
+                          selectedBookIds.length > 0 && selectedBookIds.length < sortedBooks.length;
+                      }
+                    }}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        handleSelectAll();
+                      } else {
+                        handleClearSelection();
+                      }
+                    }}
+                    className="w-4 h-4 accent-[#171e1e] rounded cursor-pointer"
+                  />
+                  <span>전체 선택</span>
+                </label>
 
-              {selectedBookIds.length > 0 ? (
-                <span className="text-xs font-bold bg-[#171e1e] text-white px-2.5 py-0.5 rounded-full">
-                  {selectedBookIds.length}권 선택됨
+                {selectedBookIds.length > 0 ? (
+                  <span className="text-xs font-bold bg-[#171e1e] text-white px-2.5 py-0.5 rounded-full">
+                    {selectedBookIds.length}권 선택됨
+                  </span>
+                ) : (
+                  <span className="text-xs text-[#737878]">
+                    (총 {sortedBooks.length}권 중)
+                  </span>
+                )}
+
+                {selectedBookIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearSelection}
+                    className="text-xs text-[#737878] hover:text-[#171e1e] underline cursor-pointer"
+                  >
+                    선택 해제
+                  </button>
+                )}
+              </div>
+
+              {/* 일괄 서가 위치 변경 컨트롤 (관리자 모드 전용) */}
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <span className="text-xs font-bold text-[#434848] whitespace-nowrap">
+                  서가 위치 변경:
                 </span>
-              ) : (
-                <span className="text-xs text-[#737878]">
-                  (총 {sortedBooks.length}권 중)
-                </span>
-              )}
-
-              {selectedBookIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleClearSelection}
-                  className="text-xs text-[#737878] hover:text-[#171e1e] underline cursor-pointer"
+                <select
+                  value={batchLocation}
+                  onChange={(e) => setBatchLocation(e.target.value as ShelfLocation)}
+                  disabled={!isAdmin || selectedBookIds.length === 0}
+                  className="bg-white border border-[#c3c7c7] rounded-xl px-2.5 py-1.5 text-xs font-semibold text-[#171e1e] outline-none disabled:bg-[#eae8e3] disabled:text-[#a0a5a5] cursor-pointer disabled:cursor-not-allowed"
+                  title={!isAdmin ? '서가 위치 변경은 관리자 모드에서만 가능합니다' : undefined}
                 >
-                  선택 해제
-                </button>
-              )}
-            </div>
+                  {SHELF_LOCATIONS.map((loc) => (
+                    <option key={loc} value={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                </select>
 
-            {/* 일괄 서가 위치 변경 컨트롤 */}
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-              <span className="text-xs font-bold text-[#434848] whitespace-nowrap">
-                서가 위치 변경:
-              </span>
-              <select
-                value={batchLocation}
-                onChange={(e) => setBatchLocation(e.target.value as ShelfLocation)}
-                disabled={selectedBookIds.length === 0}
-                className="bg-white border border-[#c3c7c7] rounded-xl px-2.5 py-1.5 text-xs font-semibold text-[#171e1e] outline-none disabled:bg-[#eae8e3] disabled:text-[#a0a5a5] cursor-pointer disabled:cursor-not-allowed"
-              >
-                {SHELF_LOCATIONS.map((loc) => (
-                  <option key={loc} value={loc}>
-                    {loc}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={selectedBookIds.length === 0 || isBatchUpdating}
-                onClick={handleBatchUpdateLocation}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                  selectedBookIds.length > 0
-                    ? 'bg-[#171e1e] text-white hover:bg-[#2c3333] cursor-pointer shadow-xs active:scale-95'
-                    : 'bg-[#e4e2dd] text-[#a0a5a5] cursor-not-allowed'
-                }`}
-              >
-                {isBatchUpdating ? '변경 중...' : '서가 위치 변경'}
-              </button>
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    disabled={selectedBookIds.length === 0 || isBatchUpdating}
+                    onClick={handleBatchUpdateLocation}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                      selectedBookIds.length > 0
+                        ? 'bg-[#171e1e] text-white hover:bg-[#2c3333] cursor-pointer shadow-xs active:scale-95'
+                        : 'bg-[#e4e2dd] text-[#a0a5a5] cursor-not-allowed'
+                    }`}
+                  >
+                    {isBatchUpdating ? '변경 중...' : '서가 위치 변경'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#eae8e3] text-[#737878] border border-[#c3c7c7] cursor-not-allowed whitespace-nowrap flex items-center gap-1"
+                    title="관리자 모드(상단 '독립서점' 3회 연속 터치)에서만 위치를 변경할 수 있습니다"
+                  >
+                    <span>🔒 관리자 전용</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -978,8 +999,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       {activeTab === 'orders' && (
         <div className="space-y-6">
           {/* Sticky Order Filter and Search Bar */}
-          <div className="sticky top-16 z-20 bg-[#fbf9f4]/95 backdrop-blur-md py-2.5 -my-2.5 transition-all">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#f5f3ee] p-3 rounded-2xl border border-[#e9e2d1] shadow-xs">
+          <div className="sticky top-16 z-20 bg-[#fbf9f4] pt-2 pb-3 border-b border-[#e9e2d1]/80 shadow-xs">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#f5f3ee] p-2.5 sm:p-3 rounded-2xl border border-[#e9e2d1]">
               {/* Filter Chips: 전체 / 🟠 주문접수 / 🔵 입고완료 / 🟢 수령완료 / ⚫ 취소 */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                 {[

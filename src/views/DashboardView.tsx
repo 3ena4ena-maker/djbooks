@@ -70,7 +70,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const stats = inventoryStore.getWeeklyStats();
   const orderStats = inventoryStore.getCustomerOrderStats();
   const allOrders = inventoryStore.getCustomerOrders();
-  const recentLogs = inventoryStore.getLogs().slice(0, 5);
+  // 최근 재고 변동: 입고와 판매만 필터링 (독자픽 추가/삭제 및 도서 정보 수정 제외)
+  const recentLogs = inventoryStore
+    .getLogs()
+    .filter((log) => {
+      // 독자픽 및 비재고 트랜잭션 제외
+      if ((log.transactionType as string) === 'READER_PICK' || (log.note && log.note.includes('독자픽'))) {
+        return false;
+      }
+      // 수량 변경이 없는 로그(0) 제외
+      if (!log.changeQuantity || log.changeQuantity === 0) {
+        return false;
+      }
+      // 입고 유형 (수량 증가: 입고, 재입고, 초기 도서 입고)
+      const isRestock =
+        (log.reason === '입고' || log.reason === '재입고' || log.reason === '초기 도서 입고') &&
+        log.changeQuantity > 0;
+      // 판매 유형 (수량 감소: 판매)
+      const isSale = log.reason === '판매' && log.changeQuantity < 0;
+
+      return isRestock || isSale;
+    })
+    .slice(0, 5);
 
   const filteredOrders = allOrders.filter((order) => {
     if (orderFilter === 'pending') {
@@ -623,73 +644,75 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Recent Activity Timeline */}
-          <div className="space-y-4 pt-2">
-            <div className="flex justify-between items-end border-b border-[#c3c7c7]/60 pb-2">
-              <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl font-bold text-[#171e1e]">
-                최근 재고 변동
-              </h3>
-              <button
-                onClick={() => onNavigate('history')}
-                className="text-xs font-bold uppercase tracking-wider text-[#625e51] hover:text-[#171e1e] transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                전체 보기 <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+          {/* Recent Activity Timeline (관리자 모드 전용) */}
+          {isAdmin && (
+            <div className="space-y-4 pt-2">
+              <div className="flex justify-between items-end border-b border-[#c3c7c7]/60 pb-2">
+                <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl font-bold text-[#171e1e]">
+                  최근 재고 변동
+                </h3>
+                <button
+                  onClick={() => onNavigate('history')}
+                  className="text-xs font-bold uppercase tracking-wider text-[#625e51] hover:text-[#171e1e] transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  전체 보기 <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
 
-            <div className="flex flex-col gap-4 relative pl-4 sm:pl-6 border-l-2 border-[#e4e2dd] ml-2">
-              {recentLogs.length === 0 ? (
-                <p className="text-sm text-[#737878] py-4">최근 변동 내역이 없습니다.</p>
-              ) : (
-                recentLogs.map((log) => {
-                  const isPositive = log.changeQuantity > 0;
-                  const isDamage = log.reason === '파손' || log.reason === '분실';
-                  return (
-                    <div key={log.id} className="relative group">
-                      {/* Dot icon on timeline line */}
-                      <div
-                        className={`absolute -left-[23px] sm:-left-[31px] top-1.5 w-4 h-4 rounded-full border-2 bg-[#fbf9f4] ${
-                          isDamage
-                            ? 'border-[#ba1a1a]'
-                            : isPositive
-                            ? 'border-[#8ea06b]'
-                            : 'border-[#171e1e]'
-                        }`}
-                      />
+              <div className="flex flex-col gap-4 relative pl-4 sm:pl-6 border-l-2 border-[#e4e2dd] ml-2">
+                {recentLogs.length === 0 ? (
+                  <p className="text-sm text-[#737878] py-4">최근 변동 내역이 없습니다.</p>
+                ) : (
+                  recentLogs.map((log) => {
+                    const isPositive = log.changeQuantity > 0;
+                    const isDamage = log.reason === '파손' || log.reason === '분실';
+                    return (
+                      <div key={log.id} className="relative group">
+                        {/* Dot icon on timeline line */}
+                        <div
+                          className={`absolute -left-[23px] sm:-left-[31px] top-1.5 w-4 h-4 rounded-full border-2 bg-[#fbf9f4] ${
+                            isDamage
+                              ? 'border-[#ba1a1a]'
+                              : isPositive
+                              ? 'border-[#8ea06b]'
+                              : 'border-[#171e1e]'
+                          }`}
+                        />
 
-                      <div
-                        onClick={() => onSelectBook(log.bookId)}
-                        className="bg-[#ffffff] rounded-xl p-3.5 border border-[#e9e2d1] hover:border-[#171e1e] transition-all cursor-pointer shadow-xs flex items-start justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm text-[#171e1e] font-medium leading-snug">
-                            <span
-                              className={`font-bold mr-1.5 ${
-                                isDamage
-                                  ? 'text-[#ba1a1a]'
-                                  : isPositive
-                                  ? 'text-[#3c4c20]'
-                                  : 'text-[#434848]'
-                              }`}
-                            >
-                              {log.changeQuantity > 0 ? `+${log.changeQuantity}` : log.changeQuantity} {log.reason}:
-                            </span>
-                            <span>{log.bookTitle}</span>
-                          </p>
-                          {log.note && (
-                            <p className="text-xs text-[#737878] mt-0.5 truncate">{log.note}</p>
-                          )}
+                        <div
+                          onClick={() => onSelectBook(log.bookId)}
+                          className="bg-[#ffffff] rounded-xl p-3.5 border border-[#e9e2d1] hover:border-[#171e1e] transition-all cursor-pointer shadow-xs flex items-start justify-between gap-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm text-[#171e1e] font-medium leading-snug">
+                              <span
+                                className={`font-bold mr-1.5 ${
+                                  isDamage
+                                    ? 'text-[#ba1a1a]'
+                                    : isPositive
+                                    ? 'text-[#3c4c20]'
+                                    : 'text-[#434848]'
+                                }`}
+                              >
+                                {log.changeQuantity > 0 ? `+${log.changeQuantity}` : log.changeQuantity} {log.reason}:
+                              </span>
+                              <span>{log.bookTitle}</span>
+                            </p>
+                            {log.note && (
+                              <p className="text-xs text-[#737878] mt-0.5 truncate">{log.note}</p>
+                            )}
+                          </div>
+                          <span className="text-xs text-[#737878] whitespace-nowrap flex-shrink-0">
+                            {formatRelativeTime(log.createdAt)}
+                          </span>
                         </div>
-                        <span className="text-xs text-[#737878] whitespace-nowrap flex-shrink-0">
-                          {formatRelativeTime(log.createdAt)}
-                        </span>
                       </div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Customer Order Modal (Create / Edit) */}

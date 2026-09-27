@@ -11,10 +11,32 @@ import {
   CustomerOrderStatus,
   DbCustomerOrder,
 } from '../types';
-import { parseCategoryHierarchy } from '../utils/category';
+import { parseCategoryHierarchy, mapKdcToCategory } from '../utils/category';
 import { INITIAL_BOOKS, INITIAL_INVENTORY, INITIAL_LOGS } from '../data/mockData';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { authStore } from './authStore';
+
+export interface NationalLibraryApiResult {
+  success: boolean;
+  source?: string;
+  reason?: string;
+  errorCode?: string;
+  message?: string;
+  totalCount?: number;
+  fields?: {
+    EA_ISBN: string;
+    TITLE: string;
+    AUTHOR: string;
+    PUBLISHER: string;
+    PUBLISH_PREDATE: string;
+    PRE_PRICE: string;
+    KDC: string;
+    KDC_CLASS_NO: string;
+    EA_ADD_CODE: string;
+  };
+  book?: Partial<Book> & { isExternalFound?: boolean; source?: string };
+  raw?: any;
+}
 
 const STORAGE_KEYS = {
   BOOKS: 'folio_books_v3',
@@ -1936,6 +1958,99 @@ class InventoryStore {
       return base + checkDigit;
     }
     return clean;
+  }
+
+  /**
+   * 국립중앙도서관 ISBN 서지정보 API 조회 함수
+   * Endpoint: /api/nl-book?isbn={isbn13}
+   * 주요 반환 필드: EA_ISBN, TITLE, AUTHOR, PUBLISHER, PUBLISH_PREDATE, PRE_PRICE, KDC, KDC_CLASS_NO, EA_ADD_CODE
+   */
+  public async queryNationalLibraryApi(
+    isbn13: string
+  ): Promise<NationalLibraryApiResult> {
+    const clean = this.normalizeIsbn(isbn13);
+    if (!clean || clean.length !== 13) {
+      return {
+        success: false,
+        reason: 'INVALID_ISBN',
+        message: '13자리 표준 ISBN-13 형식이 아닙니다.',
+      };
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(`/api/nl-book?isbn=${encodeURIComponent(clean)}`, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok && res.status !== 200) {
+        return {
+          success: false,
+          reason: 'NL_API_ERROR',
+          message: `서버 프록시 응답 오류 (HTTP ${res.status})`,
+        };
+      }
+
+      const data = await res.json();
+      if (!data?.success) {
+        return {
+          success: false,
+          reason: data?.reason || 'NL_API_ERROR',
+          errorCode: data?.errorCode,
+          message: data?.message || '국립중앙도서관 서지정보 조회 실패',
+          raw: data,
+        };
+      }
+
+      // Fields directly extracted from OpenAPI response
+      const fields = data.fields || {};
+      const rawCategory = mapKdcToCategory(fields.KDC, fields.KDC_CLASS_NO, fields.EA_ADD_CODE);
+      const parsedCat = parseCategoryHierarchy(rawCategory);
+
+      const book: Partial<Book> & { isExternalFound: boolean; source: string } = {
+        isbn: fields.EA_ISBN || clean,
+        title: fields.TITLE || '',
+        author: fields.AUTHOR || '저자 미상',
+        publisher: fields.PUBLISHER || '출판사 미상',
+        price:
+          typeof data.book?.price === 'number'
+            ? data.book.price
+            : Number((fields.PRE_PRICE || '').replace(/[^0-9]/g, '')) || 0,
+        category: rawCategory,
+        categoryMain: parsedCat.main || '국내도서',
+        categoryMiddle: parsedCat.middle || rawCategory,
+        categorySub: parsedCat.sub || rawCategory,
+        publishedDate: data.book?.publishedDate || fields.PUBLISH_PREDATE || '',
+        bindingType: '무선제본',
+        location: '신간 매대',
+        coverImage: data.book?.coverImage || '',
+        description: data.book?.description || '',
+        isExternalFound: true,
+        source: '국립중앙도서관',
+      };
+
+      return {
+        success: true,
+        source: 'NATIONAL_LIBRARY_OF_KOREA',
+        totalCount: data.totalCount || 1,
+        fields,
+        book,
+        raw: data,
+      };
+    } catch (err: any) {
+      console.warn('[NL Book Proxy] Query error or timeout', err);
+      return {
+        success: false,
+        reason: 'NL_NETWORK_ERROR',
+        message: err?.message || '네트워크 요청 시간 초과 또는 서버 연결 오류입니다.',
+      };
+    }
   }
 
   /**

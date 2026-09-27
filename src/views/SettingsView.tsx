@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { inventoryStore, AppSettings } from '../services/inventoryStore';
+import { inventoryStore, AppSettings, NationalLibraryApiResult } from '../services/inventoryStore';
 import { feedback } from '../utils/feedback';
 import {
   Settings as SettingsIcon,
@@ -11,7 +11,15 @@ import {
   Check,
   ShieldAlert,
   Code2,
-  Copy
+  Copy,
+  Library,
+  Search,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  ExternalLink,
+  BookOpen
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -26,6 +34,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onShowToast }) => {
   const [soundEnabled, setSoundEnabled] = useState(currentSettings.soundEnabled);
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+
+  // National Library API Diagnostic State
+  const [nlIsbnInput, setNlIsbnInput] = useState('9788937460005');
+  const [nlLoading, setNlLoading] = useState(false);
+  const [nlResult, setNlResult] = useState<NationalLibraryApiResult | null>(null);
+  const [showRawJson, setShowRawJson] = useState(false);
+
+  const handleTestNationalLibraryApi = async (targetIsbn?: string) => {
+    const isbnToQuery = (targetIsbn || nlIsbnInput).trim().replace(/[^0-9X]/gi, '');
+    if (!isbnToQuery) {
+      onShowToast('조회할 ISBN을 입력해주세요.');
+      return;
+    }
+    setNlLoading(true);
+    setNlResult(null);
+    try {
+      const res = await inventoryStore.queryNationalLibraryApi(isbnToQuery);
+      setNlResult(res);
+      if (res.success) {
+        feedback.playBeep('success');
+        onShowToast(`국립중앙도서관 API 응답 성공: ${res.fields?.TITLE || '도서 확인'}`);
+      } else if (res.reason === 'NL_CONFIG_ERROR') {
+        onShowToast('NL_CERT_KEY 환경변수가 아직 설정되지 않았습니다.');
+      } else if (res.reason === 'NOT_FOUND') {
+        onShowToast('국립중앙도서관에 등록되지 않은 ISBN입니다.');
+      } else {
+        onShowToast(res.message || 'API 호출 오류 발생');
+      }
+    } catch (e: any) {
+      onShowToast(`테스트 오류: ${e?.message || '네트워크 에러'}`);
+    } finally {
+      setNlLoading(false);
+    }
+  };
 
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -421,6 +463,310 @@ WITH CHECK (true);
             <span>로컬 초기화</span>
           </button>
         </div>
+      </div>
+
+      {/* Card 4: National Library of Korea ISBN API Diagnostics & Verification */}
+      <div className="bg-white rounded-2xl p-5 md:p-6 border border-[#c3c7c7] shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#e4e2dd] pb-3">
+          <div className="flex items-center gap-2">
+            <Library className="w-5 h-5 text-[#171e1e]" />
+            <h2 className="text-base font-bold text-[#171e1e]">
+              국립중앙도서관 ISBN 서지정보 API 연동 검증
+            </h2>
+          </div>
+          <span className="text-[11px] font-mono px-2.5 py-1 bg-[#f0eee9] text-[#434848] rounded-full self-start sm:self-auto">
+            /api/nl-book ↔ seoji/SearchApi.do
+          </span>
+        </div>
+
+        <div className="text-xs text-[#434848] space-y-1.5 leading-relaxed">
+          <p>
+            국립중앙도서관 공식 ISBN 서지정보 API를 서버 프록시(<code>/api/nl-book</code>)를 통해 안전하게 호출합니다.
+            인증키(<code>NL_CERT_KEY</code>)는 브라우저에 노출되지 않고 서버 환경변수에서만 처리됩니다.
+          </p>
+        </div>
+
+        {/* Input & Action Section */}
+        <div className="space-y-3 pt-1">
+          <div>
+            <label className="text-xs font-bold text-[#434848] uppercase tracking-wider block mb-1.5">
+              조회할 ISBN-13 바코드 번호
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={nlIsbnInput}
+                  onChange={(e) => setNlIsbnInput(e.target.value)}
+                  placeholder="예: 9788937460005 (13자리 ISBN)"
+                  maxLength={17}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-[#f5f3ee] border border-[#c3c7c7] rounded-xl text-sm font-mono font-medium focus:bg-white focus:border-[#171e1e] outline-none"
+                />
+                <Search className="w-4 h-4 text-[#737878] absolute left-3 top-3" />
+              </div>
+              <button
+                type="button"
+                disabled={nlLoading}
+                onClick={() => handleTestNationalLibraryApi()}
+                className="px-5 py-2.5 bg-[#171e1e] text-white rounded-xl text-xs font-bold hover:bg-[#2c3333] disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
+              >
+                {nlLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>조회 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Library className="w-4 h-4" />
+                    <span>국립중앙도서관 API 조회</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Quick ISBN Sample Buttons */}
+          <div className="flex items-center gap-2 flex-wrap text-xs text-[#737878]">
+            <span className="font-semibold text-[#434848]">샘플 ISBN 테스트:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setNlIsbnInput('9788937460005');
+                handleTestNationalLibraryApi('9788937460005');
+              }}
+              className="px-2.5 py-1 bg-[#f5f3ee] hover:bg-[#eae8e3] text-[#171e1e] rounded-lg text-xs font-medium cursor-pointer transition-colors border border-[#e4e2dd]"
+            >
+              데미안 (9788937460005)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNlIsbnInput('9788936434267');
+                handleTestNationalLibraryApi('9788936434267');
+              }}
+              className="px-2.5 py-1 bg-[#f5f3ee] hover:bg-[#eae8e3] text-[#171e1e] rounded-lg text-xs font-medium cursor-pointer transition-colors border border-[#e4e2dd]"
+            >
+              소년이 온다 (9788936434267)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNlIsbnInput('9788954682152');
+                handleTestNationalLibraryApi('9788954682152');
+              }}
+              className="px-2.5 py-1 bg-[#f5f3ee] hover:bg-[#eae8e3] text-[#171e1e] rounded-lg text-xs font-medium cursor-pointer transition-colors border border-[#e4e2dd]"
+            >
+              작별하지 않는다 (9788954682152)
+            </button>
+          </div>
+        </div>
+
+        {/* Test Result Display Area */}
+        {nlResult && (
+          <div className="pt-3 border-t border-[#e4e2dd] space-y-4">
+            {/* Status Header */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#171e1e] flex items-center gap-1.5">
+                <BookOpen className="w-4 h-4 text-[#737878]" />
+                API 응답 결과
+              </span>
+              <span
+                className={`text-xs px-2.5 py-1 rounded-full font-bold ${
+                  nlResult.success
+                    ? 'bg-[#d6eaaf] text-[#142000]'
+                    : nlResult.reason === 'NL_CONFIG_ERROR'
+                    ? 'bg-[#ffe082] text-[#5d4037]'
+                    : 'bg-[#ffdad6] text-[#93000a]'
+                }`}
+              >
+                {nlResult.success
+                  ? '✓ 정상 조회 완료 (200 OK)'
+                  : nlResult.reason === 'NL_CONFIG_ERROR'
+                  ? '⚠ 서버 환경변수 키 미설정'
+                  : nlResult.reason === 'NOT_FOUND'
+                  ? '○ 도서 정보 없음'
+                  : `✕ 오류: ${nlResult.reason}`}
+              </span>
+            </div>
+
+            {/* Config Error Guidance Box */}
+            {nlResult.reason === 'NL_CONFIG_ERROR' && (
+              <div className="p-3.5 bg-[#fff8e1] border border-[#ffe082] rounded-xl text-xs text-[#5d4037] space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-sm">
+                  <AlertCircle className="w-4 h-4 text-[#f57f17]" />
+                  서버 환경변수 NL_CERT_KEY 필요
+                </div>
+                <p>
+                  국립중앙도서관 OpenAPI 인증키가 서버 환경변수에 아직 등록되지 않았습니다.
+                </p>
+                <div className="bg-white/80 p-2.5 rounded-lg border border-[#ffe082] font-mono text-[11px] space-y-1">
+                  <div>• Cloudflare Pages: [Settings] → [Environment Variables] → Secret으로 <code>NL_CERT_KEY</code> 추가</div>
+                  <div>• 로컬 개발: 프로젝트 루트 <code>.env</code> 파일에 <code>NL_CERT_KEY=발급받은키</code> 설정</div>
+                </div>
+              </div>
+            )}
+
+            {/* Not Found Box */}
+            {nlResult.reason === 'NOT_FOUND' && (
+              <div className="p-3 bg-[#f5f3ee] border border-[#c3c7c7] rounded-xl text-xs text-[#434848]">
+                해당 ISBN(<code>{nlIsbnInput}</code>)에 대한 서지정보가 국립중앙도서관 DB에 등록되어 있지 않습니다.
+              </div>
+            )}
+
+            {/* API Error Box */}
+            {nlResult.reason === 'NL_API_ERROR' && (
+              <div className="p-3.5 bg-[#ffdad6] border border-[#ffb4ab] rounded-xl text-xs text-[#93000a] space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4" />
+                  국립중앙도서관 API 에러
+                </div>
+                <p>
+                  {nlResult.message} {nlResult.errorCode ? `(코드: ${nlResult.errorCode})` : ''}
+                </p>
+              </div>
+            )}
+
+            {/* Field Extraction Table (Requested Key Fields) */}
+            {nlResult.success && nlResult.fields && (
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-[#434848] uppercase tracking-wider">
+                  실제 API 응답 추출 필드 (OpenAPI 규격 대조)
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-[#c3c7c7]">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-[#f0eee9] text-[#171e1e] font-bold border-b border-[#c3c7c7]">
+                      <tr>
+                        <th className="px-3.5 py-2">필드명</th>
+                        <th className="px-3.5 py-2">설명</th>
+                        <th className="px-3.5 py-2">실제 응답 값</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#e4e2dd] bg-white font-mono text-[11px]">
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">EA_ISBN</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">도서 13자리 ISBN</td>
+                        <td className="px-3.5 py-2 text-[#171e1e]">{nlResult.fields.EA_ISBN || '-'}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">TITLE</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">도서 표제명</td>
+                        <td className="px-3.5 py-2 text-[#171e1e] font-sans font-bold">{nlResult.fields.TITLE || '-'}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">AUTHOR</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">저자/역자</td>
+                        <td className="px-3.5 py-2 text-[#171e1e] font-sans">{nlResult.fields.AUTHOR || '-'}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">PUBLISHER</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">출판사</td>
+                        <td className="px-3.5 py-2 text-[#171e1e] font-sans">{nlResult.fields.PUBLISHER || '-'}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">PUBLISH_PREDATE</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">출판(예정)일자</td>
+                        <td className="px-3.5 py-2 text-[#171e1e]">{nlResult.fields.PUBLISH_PREDATE || '-'}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">PRE_PRICE</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">정가 / 가격</td>
+                        <td className="px-3.5 py-2 text-[#171e1e]">
+                          {nlResult.fields.PRE_PRICE ? `${Number(nlResult.fields.PRE_PRICE).toLocaleString()}원` : '-'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">KDC</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">KDC 분류명</td>
+                        <td className="px-3.5 py-2 text-[#171e1e] font-sans">{nlResult.fields.KDC || '(미제공)'}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">KDC_CLASS_NO</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">KDC 분류기호</td>
+                        <td className="px-3.5 py-2 text-[#171e1e]">{nlResult.fields.KDC_CLASS_NO || '(미제공)'}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3.5 py-2 font-bold text-[#171e1e]">EA_ADD_CODE</td>
+                        <td className="px-3.5 py-2 text-[#737878] font-sans">부가기호(5자리)</td>
+                        <td className="px-3.5 py-2 text-[#171e1e]">{nlResult.fields.EA_ADD_CODE || '(미제공)'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Dokja Bookstore Normalized Book Preview */}
+                {nlResult.book && (
+                  <div className="p-4 bg-[#f5f3ee] rounded-xl border border-[#c3c7c7] space-y-2">
+                    <div className="text-xs font-bold text-[#171e1e] flex items-center justify-between">
+                      <span>독자서점 Book 모델 자동 변환 결과</span>
+                      <span className="text-[11px] font-normal text-[#737878]">
+                        카테고리 변환: {nlResult.book.category || '일반도서'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div className="bg-white p-2.5 rounded-lg border border-[#e4e2dd]">
+                        <span className="text-[10px] text-[#737878] block">도서명</span>
+                        <span className="font-bold text-[#171e1e] truncate block">{nlResult.book.title}</span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-[#e4e2dd]">
+                        <span className="text-[10px] text-[#737878] block">저자 / 출판사</span>
+                        <span className="font-medium text-[#171e1e] truncate block">
+                          {nlResult.book.author} / {nlResult.book.publisher}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-[#e4e2dd]">
+                        <span className="text-[10px] text-[#737878] block">판매 가격</span>
+                        <span className="font-bold text-[#171e1e] block">
+                          {nlResult.book.price?.toLocaleString()}원
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-[#e4e2dd]">
+                        <span className="text-[10px] text-[#737878] block">출판일</span>
+                        <span className="font-mono text-[#171e1e] block">
+                          {nlResult.book.publishedDate || '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Raw JSON Accordion Viewer */}
+            {nlResult.raw && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowRawJson(!showRawJson)}
+                  className="w-full flex items-center justify-between px-3 py-2 bg-[#f0eee9] hover:bg-[#eae8e3] rounded-xl text-xs font-mono text-[#171e1e] cursor-pointer transition-colors"
+                >
+                  <span className="flex items-center gap-1.5 font-sans font-bold">
+                    <Code2 className="w-3.5 h-3.5" />
+                    서버 응답 원시 JSON ({showRawJson ? '접기' : '상세 펼치기'})
+                  </span>
+                  {showRawJson ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+
+                {showRawJson && (
+                  <div className="relative mt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(nlResult.raw, null, 2));
+                        onShowToast('원시 JSON 응답이 클립보드에 복사되었습니다.');
+                      }}
+                      className="absolute right-2.5 top-2.5 px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white text-[11px] rounded-md flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" /> 복사
+                    </button>
+                    <pre className="p-3 bg-[#1b1c19] text-[#d6eaaf] rounded-xl overflow-x-auto text-[11px] font-mono leading-relaxed max-h-60">
+                      {JSON.stringify(nlResult.raw, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Supabase Schema & Diagnostic Modal */}

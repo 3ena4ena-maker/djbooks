@@ -127,3 +127,54 @@ export function getDisplayCategory(
 
   return '미분류';
 }
+
+/**
+ * 한국십진분류법(KDC) 분류명 및 분류기호 매핑 유틸리티
+ */
+export function mapKdcToCategory(
+  kdcName?: string | null,
+  kdcClassNo?: string | null,
+  addCode?: string | null
+): string {
+  if (kdcName && kdcName.trim()) {
+    return kdcName.trim();
+  }
+
+  // KDC 분류기호(kdcClassNo) 기준 분류
+  if (kdcClassNo && kdcClassNo.trim()) {
+    const num = parseFloat(kdcClassNo.trim());
+    if (!isNaN(num)) {
+      if (num >= 800 && num < 900) {
+        if (num >= 810 && num < 820) return '문학 > 한국문학 > 소설';
+        if (num >= 820 && num < 830) return '문학 > 중국문학';
+        if (num >= 830 && num < 840) return '문학 > 일본문학';
+        if (num >= 840 && num < 850) return '문학 > 영미문학';
+        return '문학';
+      }
+      if (num >= 100 && num < 200) return '인문 > 철학';
+      if (num >= 200 && num < 300) return '인문 > 종교';
+      if (num >= 300 && num < 400) {
+        if (num >= 320 && num < 330) return '경제/경영';
+        return '사회과학';
+      }
+      if (num >= 400 && num < 500) return '자연과학';
+      if (num >= 500 && num < 600) return '기술과학';
+      if (num >= 600 && num < 700) return '예술/대중문화';
+      if (num >= 700 && num < 800) return '언어';
+      if (num >= 900 && num < 1000) return '역사';
+      if (num < 100) return '총류';
+    }
+  }
+
+  // EA_ADD_CODE (5자리 부가기호)의 3~5번째 자리가 주제분류
+  if (addCode && addCode.length >= 5) {
+    const subjectCode = parseInt(addCode.slice(2, 5), 10);
+    if (!isNaN(subjectCode)) {
+      if (subjectCode >= 800 && subjectCode < 900) return '문학';
+      if (subjectCode >= 100 && subjectCode < 200) return '인문 > 철학';
+      if (subjectCode >= 300 && subjectCode < 400) return '사회과학';
+    }
+  }
+
+  return '일반도서';
+}

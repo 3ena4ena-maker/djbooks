@@ -19,14 +19,16 @@ import {
   ChevronUp,
   AlertCircle,
   ExternalLink,
-  BookOpen
+  BookOpen,
+  ArrowLeft
 } from 'lucide-react';
 
 interface SettingsViewProps {
   onShowToast: (message: string) => void;
+  onNavigateHome?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onShowToast }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onShowToast, onNavigateHome }) => {
   const currentSettings = inventoryStore.getSettings();
   const [storeName, setStoreName] = useState(currentSettings.storeName);
   const [branchName, setBranchName] = useState(currentSettings.branchName);
@@ -254,7 +256,20 @@ WITH CHECK (true);
 `;
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-8 select-none pb-16">
+    <div className="w-full max-w-4xl mx-auto space-y-6 select-none pb-16">
+      {onNavigateHome && (
+        <div>
+          <button
+            type="button"
+            onClick={onNavigateHome}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#f0eee9] text-[#434848] hover:text-[#171e1e] border border-[#c3c7c7] rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>대시보드로 돌아가기</span>
+          </button>
+        </div>
+      )}
+
       <div>
         <h1 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-3xl font-bold text-[#171e1e] mb-1.5 flex items-center gap-2">
           <SettingsIcon className="w-7 h-7 text-[#737878]" />

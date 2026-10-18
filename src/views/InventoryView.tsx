@@ -42,6 +42,7 @@ import {
   Sparkles,
   Bookmark,
   MapPin,
+  ArrowLeft,
 } from 'lucide-react';
 import { feedback } from '../utils/feedback';
 
@@ -519,6 +520,20 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6 select-none pb-12 font-['Public_Sans','Noto_Sans_KR',sans-serif]">
+      {/* Back to Dashboard Button */}
+      {onNavigate && (
+        <div>
+          <button
+            type="button"
+            onClick={() => onNavigate('dashboard')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#f0eee9] text-[#434848] hover:text-[#171e1e] border border-[#c3c7c7] rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>대시보드로 돌아가기</span>
+          </button>
+        </div>
+      )}
+
       {/* Header & Actions */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

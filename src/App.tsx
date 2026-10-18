@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { ViewType, InventoryFilter } from './types';
 import { inventoryStore } from './services/inventoryStore';
 import { authStore } from './services/authStore';
-import { Sidebar } from './components/layout/Sidebar';
-import { TopHeader } from './components/layout/TopHeader';
 import { BottomNavigation } from './components/layout/BottomNavigation';
 import { DashboardView } from './views/DashboardView';
 import { ScannerView } from './views/ScannerView';
@@ -165,49 +163,12 @@ export default function App() {
       {/* Toast Notification */}
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
 
-      {/* Main Responsive Layout */}
+      {/* Main Full-width Layout (Sidebar removed) */}
       <div className="flex flex-1 min-h-screen">
-        {/* Desktop Sidebar Navigation */}
-        <Sidebar
-          currentView={currentView}
-          onNavigate={handleNavigate}
-          onOpenQuickRestock={() => {
-            if (!isAdmin) {
-              showToast('관리자 모드에서만 사용 가능한 기능입니다.');
-              return;
-            }
-            setIsQuickRestockOpen(true);
-          }}
-          onOpenAddBook={() => {
-            if (!isAdmin) {
-              showToast('관리자 모드에서만 사용 가능한 기능입니다.');
-              return;
-            }
-            setIsAddBookOpen(true);
-          }}
-          onShowToast={showToast}
-        />
-
-        {/* Right Content Area */}
-        <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
-          {/* Global Sticky Header */}
-          <TopHeader
-            onNavigate={handleNavigate}
-            onSearch={handleGlobalSearch}
-            onOpenScanner={() => handleNavigate('scanner')}
-            onOpenAddBook={() => {
-              if (!isAdmin) {
-                showToast('관리자 모드에서만 사용 가능한 기능입니다.');
-                return;
-              }
-              setIsAddBookOpen(true);
-            }}
-            onShowToast={showToast}
-            currentView={currentView}
-          />
-
-          {/* Main View Router Container */}
-          <main className="flex-1 pt-20 sm:pt-20 md:pt-22 px-4 sm:px-6 md:px-8 lg:px-10 pb-28 lg:pb-12 max-w-7xl w-full mx-auto">
+        {/* Full-width Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 w-full">
+          {/* Main View Router Container (TopHeader removed) */}
+          <main className="flex-1 pt-3 sm:pt-6 md:pt-8 px-3 sm:px-6 md:px-8 lg:px-10 pb-28 lg:pb-12 max-w-7xl w-full mx-auto">
             {currentView === 'dashboard' && (
               <DashboardView
                 onNavigate={handleNavigate}
@@ -275,7 +236,10 @@ export default function App() {
             )}
 
             {currentView === 'settings' && (
-              <SettingsView onShowToast={showToast} />
+              <SettingsView
+                onShowToast={showToast}
+                onNavigateHome={() => handleNavigate('dashboard')}
+              />
             )}
           </main>
         </div>

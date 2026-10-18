@@ -64,7 +64,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Left Section (전체 재고) states
   const [inventorySearch, setInventorySearch] = useState('');
-  const [inventoryStockFilter, setInventoryStockFilter] = useState<'all' | 'in_stock' | 'out_of_stock'>('all');
 
 
   // Right Bottom (입고) states
@@ -132,16 +131,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const allBooksWithStock = inventoryStore.getBooksWithStock();
   const allLogs = inventoryStore.getLogs();
 
-  // 1. 전체 재고 필터링
+  // 1. 전체 재고 필터링 (대시보드 전체 도서 재고에서는 재고 부족/품절(0권 이하) 도서는 제외하고 보유 도서만 표시)
   const filteredBooks = useMemo(() => {
-    let result = [...allBooksWithStock];
-
-    // 재고 상태 필터
-    if (inventoryStockFilter === 'in_stock') {
-      result = result.filter((b) => b.quantity > 0);
-    } else if (inventoryStockFilter === 'out_of_stock') {
-      result = result.filter((b) => b.quantity <= 0);
-    }
+    let result = allBooksWithStock.filter((b) => b.quantity > 0);
 
     // 검색어 필터
     if (inventorySearch.trim()) {
@@ -162,7 +154,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       if (b.quantity !== a.quantity) return b.quantity - a.quantity;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
-  }, [allBooksWithStock, inventorySearch, inventoryStockFilter]);
+  }, [allBooksWithStock, inventorySearch]);
 
   const totalInventoryQuantity = useMemo(() => {
     return allBooksWithStock.reduce((acc, b) => acc + (b.quantity || 0), 0);
@@ -766,7 +758,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   전체 도서 재고
                 </h3>
                 <p className="text-xs text-[#737878]">
-                  현재 보유 {allBooksWithStock.length}종 · 총 {totalInventoryQuantity}권
+                  현재 보유 {inStockCount}종 · 총 {totalInventoryQuantity}권
                 </p>
               </div>
             </div>
@@ -793,7 +785,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* 검색창 & 필터 탭 */}
+          {/* 검색창 & 필터 바 */}
           <div className="space-y-2.5 mb-3 flex-shrink-0">
             <div className="relative">
               <input
@@ -815,37 +807,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <div className="flex items-center justify-between gap-2 text-xs">
-              <div className="flex bg-[#f0eee9] p-1 rounded-xl gap-1">
-                <button
-                  onClick={() => setInventoryStockFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                    inventoryStockFilter === 'all'
-                      ? 'bg-white text-[#171e1e] shadow-2xs'
-                      : 'text-[#737878] hover:text-[#171e1e]'
-                  }`}
-                >
-                  전체 ({allBooksWithStock.length})
-                </button>
-                <button
-                  onClick={() => setInventoryStockFilter('in_stock')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                    inventoryStockFilter === 'in_stock'
-                      ? 'bg-white text-[#2e7d32] shadow-2xs'
-                      : 'text-[#737878] hover:text-[#2e7d32]'
-                  }`}
-                >
-                  재고 보유 ({inStockCount})
-                </button>
-                <button
-                  onClick={() => setInventoryStockFilter('out_of_stock')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                    inventoryStockFilter === 'out_of_stock'
-                      ? 'bg-white text-[#ba1a1a] shadow-2xs'
-                      : 'text-[#737878] hover:text-[#ba1a1a]'
-                  }`}
-                >
-                  품절 ({outOfStockCount})
-                </button>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#edf5e1] border border-[#c3d9a5] rounded-xl text-[#2d4710] font-bold text-xs">
+                <span className="w-2 h-2 rounded-full bg-[#2e7d32]"></span>
+                <span>보유 도서 ({inStockCount}종)</span>
               </div>
 
               <span className="text-[11px] text-[#737878]">
@@ -885,7 +849,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                          <StockBadge quantity={book.quantity} />
+                          <StockBadge quantity={book.quantity} showExactRemaining />
                           {book.isReaderPick && (
                             <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded border ${
                               isOutOfStock 

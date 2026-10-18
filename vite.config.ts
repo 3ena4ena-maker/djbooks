@@ -243,20 +243,9 @@ function nlBookProxyPlugin(env: Record<string, string>): Plugin {
           try {
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             const reqUrl = new URL(req.url, 'http://localhost:3000');
+            const query = (reqUrl.searchParams.get('query') || reqUrl.searchParams.get('q') || reqUrl.searchParams.get('title') || '').trim();
             const isbn = (reqUrl.searchParams.get('isbn') || '').replace(/[^0-9X]/gi, '').trim();
             const certKey = env.NL_CERT_KEY || process.env.NL_CERT_KEY || '';
-
-            if (!isbn || isbn.length !== 13) {
-              res.statusCode = 400;
-              res.end(
-                JSON.stringify({
-                  success: false,
-                  reason: 'INVALID_ISBN',
-                  message: 'A valid 13-digit ISBN is required.',
-                })
-              );
-              return;
-            }
 
             if (!certKey) {
               res.statusCode = 200;
@@ -266,6 +255,124 @@ function nlBookProxyPlugin(env: Record<string, string>): Plugin {
                   reason: 'NL_CONFIG_ERROR',
                   message:
                     'NL_CERT_KEY is not configured in server environment. Please set NL_CERT_KEY in Cloudflare Pages Secrets or .env file.',
+                })
+              );
+              return;
+            }
+
+            // 1. Keyword search mode (/api/nl-book?query=...)
+            if (query && (!isbn || isbn.length !== 13)) {
+              try {
+                const nlTitleUrl = `https://www.nl.go.kr/seoji/SearchApi.do?cert_key=${encodeURIComponent(
+                  certKey
+                )}&result_style=json&page_no=1&page_size=15&title=${encodeURIComponent(query)}`;
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+                const upstreamRes = await fetch(nlTitleUrl, {
+                  signal: controller.signal,
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; DokjaBookstore/1.0)',
+                    Accept: 'application/json, text/plain, */*',
+                  },
+                });
+                clearTimeout(timeoutId);
+
+                let docs: any[] = [];
+                if (upstreamRes.ok) {
+                  const text = await upstreamRes.text();
+                  try {
+                    const data = JSON.parse(text.trim());
+                    if (Array.isArray(data.docs)) docs = data.docs;
+                    else if (Array.isArray(data.item)) docs = data.item;
+                    else if (data.docs) docs = [data.docs];
+                  } catch {}
+                }
+
+                // If fewer than 5 results by title, also query by author
+                if (docs.length < 5) {
+                  try {
+                    const nlAuthorUrl = `https://www.nl.go.kr/seoji/SearchApi.do?cert_key=${encodeURIComponent(
+                      certKey
+                    )}&result_style=json&page_no=1&page_size=10&author=${encodeURIComponent(query)}`;
+                    const aController = new AbortController();
+                    const aTimeout = setTimeout(() => aController.abort(), 6000);
+                    const aRes = await fetch(nlAuthorUrl, {
+                      signal: aController.signal,
+                      headers: {
+                        'User-Agent': 'Mozilla/5.0 (compatible; DokjaBookstore/1.0)',
+                        Accept: 'application/json, text/plain, */*',
+                      },
+                    });
+                    clearTimeout(aTimeout);
+                    if (aRes.ok) {
+                      const aText = await aRes.text();
+                      const aData = JSON.parse(aText.trim());
+                      const aDocs = Array.isArray(aData.docs) ? aData.docs : Array.isArray(aData.item) ? aData.item : [];
+                      for (const ad of aDocs) {
+                        const adIsbn = ad.EA_ISBN || '';
+                        if (!docs.some((d: any) => (d.EA_ISBN || '') === adIsbn && adIsbn !== '')) {
+                          docs.push(ad);
+                        }
+                      }
+                    }
+                  } catch {}
+                }
+
+                const seenIsbns = new Set<string>();
+                const books = docs
+                  .filter((d: any) => Boolean(d.TITLE))
+                  .map((item: any) => {
+                    const eaIsbn = (item.EA_ISBN || '').replace(/[^0-9X]/gi, '').trim();
+                    const rawTitle = (item.TITLE || '').trim();
+                    const cleanTitle = rawTitle.replace(/^(전자책_|종이책_|\[도서\]\s*)/, '');
+                    const rawAuthor = (item.AUTHOR || '').trim();
+                    const cleanAuthor = rawAuthor.replace(/^(저자\s*:\s*|지은이\s*:\s*)/, '').trim() || '저자 미상';
+                    const publisher = (item.PUBLISHER || '').trim() || '출판사 미상';
+                    const priceStr = item.REAL_PRICE || item.PRE_PRICE || '';
+                    const price = Number(String(priceStr).replace(/[^0-9]/g, '')) || 15000;
+                    let pubDate = (item.PUBLISH_PREDATE || item.REAL_PUBLISH_DATE || '').trim();
+                    if (/^\d{8}$/.test(pubDate)) {
+                      pubDate = `${pubDate.slice(0, 4)}.${pubDate.slice(4, 6)}.${pubDate.slice(6, 8)}`;
+                    }
+
+                    return {
+                      isbn: eaIsbn,
+                      title: cleanTitle,
+                      author: cleanAuthor,
+                      publisher,
+                      price,
+                      category: '국내도서',
+                      publishedDate: pubDate,
+                      coverImage: '',
+                      description: item.BOOK_INTRODUCTION || item.BOOK_SUMMARY || '',
+                    };
+                  })
+                  .filter((b: any) => {
+                    if (!b.isbn) return true;
+                    if (seenIsbns.has(b.isbn)) return false;
+                    seenIsbns.add(b.isbn);
+                    return true;
+                  });
+
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, books }));
+                return;
+              } catch (err: any) {
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: false, reason: 'NL_KEYWORD_ERROR', message: err?.message }));
+                return;
+              }
+            }
+
+            if (!isbn || isbn.length !== 13) {
+              res.statusCode = 400;
+              res.end(
+                JSON.stringify({
+                  success: false,
+                  reason: 'INVALID_ISBN',
+                  message: 'A valid 13-digit ISBN is required.',
                 })
               );
               return;

@@ -2533,7 +2533,69 @@ class InventoryStore {
       }
     }
 
-    // 2. Query Server Naver Book Search Proxy (/api/naver-book?query=...)
+    // 1-1. If user typed a 13-digit ISBN directly into keyword search, resolve immediately
+    const cleanIsbnCandidate = q.replace(/[^0-9X]/gi, '');
+    if (cleanIsbnCandidate.length === 13) {
+      try {
+        const isbnBook = await this.lookupExternalBook(cleanIsbnCandidate);
+        if (isbnBook && isbnBook.title) {
+          const key = `${isbnBook.title.trim().toLowerCase()}|${(isbnBook.author || '').trim().toLowerCase()}`;
+          if (!seenTitles.has(key)) {
+            seenTitles.add(key);
+            results.unshift({
+              isbn: isbnBook.isbn || cleanIsbnCandidate,
+              title: isbnBook.title,
+              author: isbnBook.author || '저자 미상',
+              publisher: isbnBook.publisher || '출판사 미상',
+              price: isbnBook.price || 15000,
+              coverImage: isbnBook.coverImage,
+              inStock: false,
+              quantity: 0,
+              source: '도서 DB',
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Query National Library of Korea Official SearchApi (/api/nl-book?query=...)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`/api/nl-book?query=${encodeURIComponent(q)}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.books)) {
+          for (const item of data.books) {
+            const key = `${item.title.trim().toLowerCase()}|${(item.author || '').trim().toLowerCase()}`;
+            if (!seenTitles.has(key) && item.title) {
+              seenTitles.add(key);
+              results.push({
+                isbn: item.isbn || '',
+                title: item.title,
+                author: item.author || '저자 미상',
+                publisher: item.publisher || '출판사 미상',
+                price: item.price || 15000,
+                coverImage:
+                  item.coverImage ||
+                  'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+                inStock: false,
+                quantity: 0,
+                source: '도서 DB',
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore National Library keyword error and continue
+    }
+
+    // 3. Query Server Naver Book Search Proxy (/api/naver-book?query=...)
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);

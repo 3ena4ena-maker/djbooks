@@ -534,23 +534,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setIsStockOutModalOpen(true)}
-                  className="px-3 py-1.5 bg-[#ba1a1a] hover:bg-[#93000a] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
-                  title="출고 내용 입력 (판매, 반품, 파손 등)"
-                >
-                  <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>출고 입력</span>
-                </button>
-                <button
-                  onClick={() => onNavigate('history')}
-                  className="text-xs font-bold text-[#434848] hover:text-[#171e1e] flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-[#f0eee9] transition-all cursor-pointer"
-                  title="전체 변동 내역 페이지로 이동"
-                >
-                  <span>내역</span>
-                  <ChevronRight className="w-4 h-4 text-[#737878]" />
-                </button>
+                {isAdmin && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsStockOutModalOpen(true)}
+                      className="px-3 py-1.5 bg-[#ba1a1a] hover:bg-[#93000a] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                      title="출고 내용 입력 (판매, 반품, 파손 등)"
+                    >
+                      <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>출고 입력</span>
+                    </button>
+                    <button
+                      onClick={() => onNavigate('history')}
+                      className="text-xs font-bold text-[#434848] hover:text-[#171e1e] flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-[#f0eee9] transition-all cursor-pointer"
+                      title="전체 변동 내역 페이지로 이동"
+                    >
+                      <span>내역</span>
+                      <ChevronRight className="w-4 h-4 text-[#737878]" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -628,33 +632,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setIsStockInModalOpen(true)}
-                  className="px-3 py-1.5 bg-[#2e7d32] hover:bg-[#1b5e20] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
-                  title="입고 내용 입력 (신규 입고, 재입고 등)"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>입고 입력</span>
-                </button>
                 {isAdmin && (
-                  <button
-                    onClick={onOpenAddBook}
-                    className="px-2.5 py-1.5 bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] border border-[#c3c7c7] rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                    title="새 도서 등록"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>신규 도서</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsStockInModalOpen(true)}
+                      className="px-3 py-1.5 bg-[#2e7d32] hover:bg-[#1b5e20] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                      title="입고 내용 입력 (신규 입고, 재입고 등)"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>입고 입력</span>
+                    </button>
+                    <button
+                      onClick={onOpenAddBook}
+                      className="px-2.5 py-1.5 bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] border border-[#c3c7c7] rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                      title="새 도서 등록"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>신규 도서</span>
+                    </button>
+                    <button
+                      onClick={() => onNavigate('history')}
+                      className="text-xs font-bold text-[#434848] hover:text-[#171e1e] flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-[#f0eee9] transition-all cursor-pointer"
+                      title="전체 변동 내역 페이지로 이동"
+                    >
+                      <span>내역</span>
+                      <ChevronRight className="w-4 h-4 text-[#737878]" />
+                    </button>
+                  </>
                 )}
-                <button
-                  onClick={() => onNavigate('history')}
-                  className="text-xs font-bold text-[#434848] hover:text-[#171e1e] flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-[#f0eee9] transition-all cursor-pointer"
-                  title="전체 변동 내역 페이지로 이동"
-                >
-                  <span>내역</span>
-                  <ChevronRight className="w-4 h-4 text-[#737878]" />
-                </button>
               </div>
             </div>
 
@@ -993,8 +999,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* ======================================================== */}
       </div>
 
-      {/* 출고 내용 입력 모달 */}
-      {isStockOutModalOpen && (
+      {/* 출고 내용 입력 모달 (관리자 전용) */}
+      {isAdmin && isStockOutModalOpen && (
         <StockOutModal
           onClose={() => setIsStockOutModalOpen(false)}
           onSuccess={(msg) => {
@@ -1003,8 +1009,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         />
       )}
 
-      {/* 입고 내용 입력 모달 */}
-      {isStockInModalOpen && (
+      {/* 입고 내용 입력 모달 (관리자 전용) */}
+      {isAdmin && isStockInModalOpen && (
         <StockInModal
           onClose={() => setIsStockInModalOpen(false)}
           onSuccess={(msg) => {

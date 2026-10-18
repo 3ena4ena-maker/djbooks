@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { BookWithStock, StockReason } from '../../types';
 import { inventoryStore } from '../../services/inventoryStore';
+import { authStore } from '../../services/authStore';
 import { feedback } from '../../utils/feedback';
 import { BookCover } from '../common/BookCover';
 import {
@@ -72,6 +73,12 @@ export const StockInModal: React.FC<StockInModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!authStore.isAdmin) {
+      feedback.playBeep('warning');
+      alert('입고 처리는 관리자 모드에서만 가능합니다.');
+      onClose();
+      return;
+    }
     if (!selectedBook) return;
 
     if (quantity <= 0) {

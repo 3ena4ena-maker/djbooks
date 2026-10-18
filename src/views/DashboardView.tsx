@@ -618,18 +618,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       type="button"
                       onClick={() => setIsStockInModalOpen(true)}
                       className="px-3 py-1.5 bg-[#2e7d32] hover:bg-[#1b5e20] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
-                      title="입고 내용 입력 (신규 입고, 재입고 등)"
+                      title="입고 내용 입력 (신규 도서 등록 및 기존 도서 입고)"
                     >
                       <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>입고 입력</span>
-                    </button>
-                    <button
-                      onClick={onOpenAddBook}
-                      className="px-2.5 py-1.5 bg-[#f0eee9] hover:bg-[#eae8e3] text-[#171e1e] border border-[#c3c7c7] rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                      title="새 도서 등록"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>신규 도서</span>
                     </button>
                     <button
                       onClick={() => onNavigate('history')}

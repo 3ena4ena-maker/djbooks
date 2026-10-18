@@ -2057,6 +2057,58 @@ class InventoryStore {
   }
 
   /**
+   * Helper: Query Naver Book Search API via proxy (/api/naver-book?isbn=...)
+   */
+  private async queryNaverBookApi(
+    isbn13: string
+  ): Promise<(Partial<Book> & { isExternalFound?: boolean; source?: string }) | null> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch(`/api/naver-book?isbn=${encodeURIComponent(isbn13)}`, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) return null;
+
+      const data = await res.json();
+      if (data?.success && data?.book) {
+        const rawCat = data.book.category || '국내도서';
+        const parsedCat = parseCategoryHierarchy(rawCat);
+
+        return {
+          isbn: data.book.isbn || isbn13,
+          title: data.book.title || '',
+          author: data.book.author || '저자 미상',
+          publisher: data.book.publisher || '출판사 미상',
+          price: typeof data.book.price === 'number' ? data.book.price : 15000,
+          category: rawCat,
+          categoryMain: parsedCat.main || '국내도서',
+          categoryMiddle: parsedCat.middle || '일반도서',
+          categorySub: parsedCat.sub || '일반도서',
+          publishedDate: data.book.publishedDate || new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+          bindingType: '무선제본',
+          location: '신간 매대',
+          coverImage:
+            data.book.coverImage ||
+            'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=600',
+          description: data.book.description || '',
+          isExternalFound: true,
+          source: '네이버 도서',
+        };
+      }
+    } catch {
+      // Ignore proxy error
+    }
+    return null;
+  }
+
+  /**
    * Helper: Query Aladin Open API via Cloudflare Pages Function proxy (/api/aladin)
    */
   private async queryAladinApi(
@@ -2224,14 +2276,15 @@ class InventoryStore {
 
   /**
    * External Book lookup with multi-tier API integration:
-   * 1순위: 알라딘 Open API (국내 도서 특화)
-   * 2순위: Google Books API (글로벌/국내 도서 Fallback)
-   * 3순위: Open Library & 프리셋 카탈로그 보조 백업
-   * 최종 실패 시: ISBN 유지 및 사용자 수동 입력 템플릿
+   * 1순위: 네이버 도서 검색 API (한국 신간/표지 최적화)
+   * 2순위: 알라딘 Open API (국내 도서 서지정보)
+   * 3순위: 국립중앙도서관 ISBN 서지정보 API (국가 표준 서지)
+   * 4순위: Google Books API (글로벌/국내 도서 Fallback)
+   * 5순위: Open Library & 프리셋 카탈로그 보조 백업
    */
   public async lookupExternalBook(
     isbn: string
-  ): Promise<(Partial<Book> & { isExternalFound?: boolean }) | null> {
+  ): Promise<(Partial<Book> & { isExternalFound?: boolean; source?: string }) | null> {
     const clean = this.normalizeIsbn(isbn);
     if (!clean) return null;
 
@@ -2240,26 +2293,48 @@ class InventoryStore {
     // Step 0. Check local / Supabase database first
     const supabaseMatch = await this.lookupBookByIsbnInSupabase(clean);
     if (supabaseMatch) {
-      return { ...supabaseMatch, isExternalFound: true };
+      return { ...supabaseMatch, isExternalFound: true, source: '서점 등록 재고' };
     }
 
-    // Step 1 (1순위): Aladin Open API
+    // Step 1 (1순위): 네이버 도서 검색 API
+    try {
+      const naverResult = await this.queryNaverBookApi(clean);
+      if (naverResult) {
+        console.log('[BookLookup] Using Naver Book result');
+        return naverResult;
+      }
+    } catch (errNaver) {
+      console.warn('[BookLookup] Naver Book API step error, proceeding to Aladin');
+    }
+
+    // Step 2 (2순위): Aladin Open API
     try {
       const aladinResult = await this.queryAladinApi(clean);
       if (aladinResult) {
         console.log('[BookLookup] Using Aladin result');
-        return aladinResult;
+        return { ...aladinResult, source: '알라딘' };
       }
     } catch (errAladin) {
-      console.warn('[BookLookup] Aladin API step error, proceeding to Google Books');
+      console.warn('[BookLookup] Aladin API step error, proceeding to National Library');
     }
 
-    // Step 2 (2순위): Google Books API
+    // Step 3 (3순위): 국립중앙도서관 공식 ISBN 서지정보 API
+    try {
+      const nlResult = await this.queryNationalLibraryApi(clean);
+      if (nlResult?.success && nlResult.book) {
+        console.log('[BookLookup] Using National Library result');
+        return nlResult.book;
+      }
+    } catch (errNL) {
+      console.warn('[BookLookup] National Library API step error, proceeding to Google Books');
+    }
+
+    // Step 4 (4순위): Google Books API
     try {
       const gBooksResult = await this.queryGoogleBooksApi(clean);
       if (gBooksResult) {
         console.log('[BookLookup] Using Google Books result');
-        return gBooksResult;
+        return { ...gBooksResult, source: '구글 도서' };
       }
     } catch (errGBooks) {
       console.warn('[BookLookup] Google Books step error, proceeding to fallback');
@@ -2458,7 +2533,42 @@ class InventoryStore {
       }
     }
 
-    // 2. Query Server Aladin / Google Books Proxy (/api/aladin?query=...)
+    // 2. Query Server Naver Book Search Proxy (/api/naver-book?query=...)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`/api/naver-book?query=${encodeURIComponent(q)}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.books)) {
+          for (const item of data.books) {
+            const key = `${item.title.trim().toLowerCase()}|${(item.author || '').trim().toLowerCase()}`;
+            if (!seenTitles.has(key) && item.title) {
+              seenTitles.add(key);
+              results.push({
+                isbn: item.isbn || '',
+                title: item.title,
+                author: item.author || '저자 미상',
+                publisher: item.publisher || '출판사 미상',
+                price: item.price || 15000,
+                coverImage: item.coverImage,
+                inStock: false,
+                quantity: 0,
+                source: '도서 DB',
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore Naver proxy error and proceed
+    }
+
+    // 3. Query Server Aladin / Google Books Proxy (/api/aladin?query=...)
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);

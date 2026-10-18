@@ -431,16 +431,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
                   <button
                     onClick={() => {
-                      onNavigate('orders');
-                      setIsDashMenuOpen(false);
-                    }}
-                    className="w-full px-4 py-2 text-left text-xs font-semibold text-[#434848] hover:bg-[#fbf9f4] hover:text-[#171e1e] flex items-center gap-2 cursor-pointer"
-                  >
-                    <ClipboardList className="w-4 h-4 text-[#737878]" />
-                    <span>손님 주문 관리</span>
-                  </button>
-                  <button
-                    onClick={() => {
                       onNavigate('scanner');
                       setIsDashMenuOpen(false);
                     }}

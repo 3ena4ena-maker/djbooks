@@ -429,16 +429,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <BookOpen className="w-4 h-4 text-[#737878]" />
                     <span>도서 재고 목록</span>
                   </button>
-                  <button
-                    onClick={() => {
-                      onNavigate('scanner');
-                      setIsDashMenuOpen(false);
-                    }}
-                    className="w-full px-4 py-2 text-left text-xs font-semibold text-[#434848] hover:bg-[#fbf9f4] hover:text-[#171e1e] flex items-center gap-2 cursor-pointer"
-                  >
-                    <ScanLine className="w-4 h-4 text-[#737878]" />
-                    <span>바코드 스캔</span>
-                  </button>
                   {isAdmin && (
                     <>
                       <button

@@ -130,16 +130,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       label: '도서 재고 목록',
       icon: <BookOpen className="w-4 h-4 text-[#737878]" />,
     },
-    {
-      id: 'orders',
-      label: '손님 주문 관리',
-      icon: <ClipboardList className="w-4 h-4 text-[#737878]" />,
-    },
-    {
-      id: 'scanner',
-      label: '바코드 스캔',
-      icon: <ScanLine className="w-4 h-4 text-[#737878]" />,
-    },
+
     {
       id: 'history',
       label: '재고 변동 기록',

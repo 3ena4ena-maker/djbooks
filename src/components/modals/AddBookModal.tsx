@@ -51,6 +51,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [description, setDescription] = useState(initialData?.description || '');
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [existingBookId, setExistingBookId] = useState<string | null>(null);
 
   // 1. 도서명/저자 통합 검색 상태
   const [searchQuery, setSearchQuery] = useState('');
@@ -125,13 +126,21 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 
   // 검색 결과에서 도서 선택 시 폼 필드 자동 입력
   const handleSelectBook = async (b: {
+    id?: string;
     title: string;
     author: string;
     publisher: string;
     price: number;
     isbn?: string;
     coverImage?: string;
+    source?: '매장 재고' | '도서 DB';
   }) => {
+    if (b.id) {
+      setExistingBookId(b.id);
+      setEntryType('재입고');
+    } else {
+      setExistingBookId(null);
+    }
     setTitle(b.title);
     setAuthor(b.author);
     setPublisher(b.publisher || '');
@@ -168,10 +177,30 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     const validated = cleanAndValidateIsbn(rawQuery);
     const queryToUse = validated.isbn13 || rawQuery.trim();
 
+    // 기존 매장 보유 도서 확인
+    const existing = inventoryStore.getBookByIsbn(queryToUse);
+    if (existing) {
+      setExistingBookId(existing.id);
+      setIsbn(existing.isbn);
+      setTitle(existing.title);
+      setAuthor(existing.author);
+      setPublisher(existing.publisher || '');
+      if (existing.price) setPrice(existing.price);
+      if (existing.category) setCategory(existing.category);
+      if (existing.coverImage) setCoverImage(existing.coverImage);
+      if (existing.description) setDescription(existing.description);
+      if (existing.location) setLocation(existing.location);
+      setIsReaderPick(Boolean(existing.isReaderPick));
+      setEntryType('재입고');
+      feedback.playBeep('success');
+      return;
+    }
+
     setIsSearching(true);
     try {
       const data = await inventoryStore.lookupExternalBook(queryToUse);
       if (data) {
+        setExistingBookId(null);
         if (data.isbn) setIsbn(data.isbn);
         if (data.title) setTitle(data.title);
         if (data.author) setAuthor(data.author);
@@ -204,6 +233,35 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 
     setIsSubmitting(true);
     try {
+      // 1. 기존 매장에 등록된 도서인 경우 (ID 일치 또는 동일 ISBN 존재)
+      const matchedExisting = existingBookId
+        ? inventoryStore.getBookById(existingBookId)
+        : (isbn.trim() ? inventoryStore.getBookByIsbn(isbn.trim()) : undefined);
+
+      if (matchedExisting) {
+        const adjustReason = entryType === '초기 도서 입고' ? '입고' : entryType;
+        const res = await inventoryStore.adjustStock(
+          matchedExisting.id,
+          initialStock,
+          adjustReason,
+          `도서 등록 입고 (${adjustReason} +${initialStock}권)`
+        );
+
+        if (res.success) {
+          feedback.playBeep('success');
+          onClose();
+          onSuccess(
+            matchedExisting.id,
+            `'${matchedExisting.title}' 도서가 +${initialStock}권 입고되었습니다. (현재 재고: ${res.newQuantity}권)`
+          );
+        } else {
+          feedback.playBeep('warning');
+          alert(res.error || '입고 처리 중 오류가 발생했습니다.');
+        }
+        return;
+      }
+
+      // 2. 신규 도서 등록 및 초기 입고
       const newBook = await inventoryStore.registerBook(
         {
           isbn: isbn.trim() || `N/A-${Date.now()}`,
@@ -226,7 +284,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 
       feedback.playBeep('success');
       onClose();
-      onSuccess(newBook.id, `새로운 도서 '${newBook.title}'이(가) 등록되었습니다.`);
+      onSuccess(newBook.id, `새로운 도서 '${newBook.title}'이(가) 등록되고 ${initialStock}권 입고되었습니다.`);
     } catch (err) {
       console.error('Failed to register book:', err);
       setIsSubmitting(false);
@@ -241,7 +299,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
           <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
             <BookPlus className="w-5 h-5 text-[#171e1e] shrink-0" />
             <h3 className="font-['Playfair_Display','Noto_Serif_KR',serif] text-base sm:text-lg font-bold text-[#171e1e] truncate">
-              신규 도서 등록
+              도서 등록
             </h3>
           </div>
           <button
@@ -671,7 +729,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
               className="w-full sm:w-auto px-5 py-2.5 bg-[#171e1e] text-white rounded-xl text-xs font-bold hover:bg-[#2c3333] transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
             >
               <BookPlus className="w-4 h-4 text-[#d6eaaf] shrink-0" />
-              <span>{isSubmitting ? '등록 중...' : '도서 등록 완료'}</span>
+              <span>{isSubmitting ? '등록 및 입고 중...' : `도서 등록 완료 (+${initialStock}권)`}</span>
             </button>
           </div>
         </form>
@@ -682,7 +740,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleBarcodeScanned}
-        title="신규 도서 바코드 스캔"
+        title="도서 바코드 스캔"
       />
     </div>
   );

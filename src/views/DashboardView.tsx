@@ -4,7 +4,6 @@ import { inventoryStore } from '../services/inventoryStore';
 import { authStore } from '../services/authStore';
 import { CustomerOrderModal } from '../components/modals/CustomerOrderModal';
 import { StockOutModal } from '../components/modals/StockOutModal';
-import { StockInModal } from '../components/modals/StockInModal';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { BookCover } from '../components/common/BookCover';
 import { StockBadge } from '../components/common/StockBadge';
@@ -74,9 +73,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [editingOrder, setEditingOrder] = useState<CustomerOrder | null>(null);
   const [orderToDelete, setOrderToDelete] = useState<CustomerOrder | null>(null);
 
-  // Stock Movement Modals (출고 / 입고 입력)
+  // Stock Movement Modals (출고 입력)
   const [isStockOutModalOpen, setIsStockOutModalOpen] = useState(false);
-  const [isStockInModalOpen, setIsStockInModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Hamburger Menu state
@@ -608,9 +606,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <>
                     <button
                       type="button"
-                      onClick={() => setIsStockInModalOpen(true)}
+                      onClick={onOpenAddBook}
                       className="px-3 py-1.5 bg-[#2e7d32] hover:bg-[#1b5e20] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
-                      title="입고 내용 입력 (신규 도서 등록 및 기존 도서 입고)"
+                      title="도서 등록 및 입고 입력"
                     >
                       <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>입고 입력</span>
@@ -945,16 +943,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         />
       )}
 
-      {/* 입고 내용 입력 모달 (관리자 전용) */}
-      {isAdmin && isStockInModalOpen && (
-        <StockInModal
-          onClose={() => setIsStockInModalOpen(false)}
-          onSuccess={(msg) => {
-            if (onShowToast) onShowToast(msg);
-          }}
-          onOpenAddBook={onOpenAddBook}
-        />
-      )}
+
 
       {/* 손님 주문 등록/수정 모달 (필요 시 유지) */}
       {isOrderModalOpen && (

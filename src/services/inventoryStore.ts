@@ -105,7 +105,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   storeName: '독자서점',
   branchName: '본점',
-  lowStockThreshold: 3,
+  lowStockThreshold: 0,
   soundEnabled: true,
   hapticEnabled: true,
 };
@@ -215,6 +215,9 @@ class InventoryStore {
       let loadedSettings: AppSettings = storedSettings ? JSON.parse(storedSettings) : { ...DEFAULT_SETTINGS };
       if (!loadedSettings.storeName || loadedSettings.storeName === '책방 재고') {
         loadedSettings.storeName = '독자서점';
+      }
+      if (loadedSettings.lowStockThreshold === undefined || loadedSettings.lowStockThreshold === 3) {
+        loadedSettings.lowStockThreshold = 0;
       }
       this.settings = loadedSettings;
     } catch (e) {

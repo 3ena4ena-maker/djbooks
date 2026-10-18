@@ -6,7 +6,6 @@ import { CustomerOrderModal } from '../components/modals/CustomerOrderModal';
 import { StockOutModal } from '../components/modals/StockOutModal';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { BookCover } from '../components/common/BookCover';
-import { StockBadge } from '../components/common/StockBadge';
 import { feedback } from '../utils/feedback';
 import {
   Library,
@@ -847,7 +846,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                          <StockBadge quantity={book.quantity} showExactRemaining />
                           {book.isReaderPick && (
                             <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded border ${
                               isOutOfStock 

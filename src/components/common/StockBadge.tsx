@@ -14,6 +14,7 @@ export const StockBadge: React.FC<StockBadgeProps> = ({
   showExactRemaining = false,
   className = '',
 }) => {
+  // 독자서점(독립서점) 운영 특성: 1권 이상은 정상 재고이므로 항상 '재고 있음'으로 표시
   const currentThreshold = threshold !== undefined 
     ? threshold 
     : inventoryStore.getSettings().lowStockThreshold;
@@ -28,7 +29,8 @@ export const StockBadge: React.FC<StockBadgeProps> = ({
     );
   }
 
-  if (currentThreshold > 0 && quantity <= currentThreshold) {
+  // threshold가 명시적으로 2 이상으로 설정되어 있고 수량이 1보다 큰 경우에만 예외적으로 재고 부족 표시
+  if (currentThreshold > 1 && quantity <= currentThreshold && quantity > 1) {
     return (
       <span
         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide bg-[#ffdad6] text-[#93000a] whitespace-nowrap ${className}`}

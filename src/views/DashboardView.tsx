@@ -80,6 +80,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [isDashMenuOpen, setIsDashMenuOpen] = useState(false);
   const dashMenuRef = useRef<HTMLDivElement>(null);
 
+  // Triple-click handler for admin mode toggle on dashboard title
+  const titleClickCountRef = useRef(0);
+  const titleClickTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const handleManualSync = async () => {
     setIsSyncing(true);
     try {
@@ -104,6 +108,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return () => {
       unsubStore();
       unsubAuth();
+      if (titleClickTimerRef.current) {
+        clearTimeout(titleClickTimerRef.current);
+      }
     };
   }, []);
 
@@ -278,6 +285,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
+  // 3회 연속 클릭 시 관리자 모드 전환 (오작동 방지)
+  const handleTitleClick = () => {
+    if (titleClickTimerRef.current) {
+      clearTimeout(titleClickTimerRef.current);
+    }
+
+    titleClickCountRef.current += 1;
+
+    if (titleClickCountRef.current >= 3) {
+      titleClickCountRef.current = 0;
+      const nextState = !isAdmin;
+      authStore.setAdminMode(nextState);
+      feedback.playBeep('success');
+      if (onShowToast) {
+        onShowToast(
+          nextState
+            ? '🎉 관리자 모드로 전환되었습니다.'
+            : '일반 모드로 전환되었습니다.'
+        );
+      }
+    } else {
+      titleClickTimerRef.current = setTimeout(() => {
+        titleClickCountRef.current = 0;
+      }, 1000);
+    }
+  };
+
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6 select-none font-['Public_Sans','Noto_Sans_KR',sans-serif]">
       {/* 🌟 상단 대시보드 헤더 & 핵심 지표 바 */}
@@ -292,18 +326,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <h2
-            onClick={() => {
-              const nextState = !isAdmin;
-              authStore.setAdminMode(nextState);
-              feedback.playBeep('success');
-              if (onShowToast) {
-                onShowToast(
-                  nextState
-                    ? '🎉 관리자 모드로 전환되었습니다.'
-                    : '일반 모드로 전환되었습니다.'
-                );
-              }
-            }}
+            onClick={handleTitleClick}
+            title="3번 연속 클릭 시 관리자 모드 전환"
             className="font-['Playfair_Display','Noto_Serif_KR',serif] text-xl sm:text-2xl md:text-3xl font-bold text-[#171e1e] cursor-pointer select-none inline-flex items-center gap-2 transition-opacity active:opacity-70"
           >
             <span>{settings.storeName ? `${settings.storeName} 대시보드` : '독자서점 대시보드'}</span>
